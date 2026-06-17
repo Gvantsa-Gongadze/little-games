@@ -3,7 +3,18 @@ import react from '@vitejs/plugin-react'
 import { resolve } from 'path'
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      name: 'chrome-devtools-well-known',
+      configureServer(server) {
+        server.middlewares.use('/.well-known/appspecific/com.chrome.devtools.json', (_req, res) => {
+          res.setHeader('Content-Type', 'application/json')
+          res.end('{}')
+        })
+      },
+    },
+  ],
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
