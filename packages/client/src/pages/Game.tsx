@@ -1,7 +1,5 @@
+import PixiCanvas from '@/components/PixiCanvas'
+
 export default function Game() {
-  return (
-    <div>
-      <h1>Game</h1>
-    </div>
-  )
+  return <PixiCanvas />
 }
