@@ -1,7 +1,6 @@
 import {
   Scene,
   PerspectiveCamera,
-  WebGLRenderer,
   BoxGeometry,
   MeshStandardMaterial,
   Mesh,
