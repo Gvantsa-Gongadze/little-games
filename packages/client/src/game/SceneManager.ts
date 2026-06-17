@@ -1,6 +1,7 @@
 import { Application, Container } from 'pixi.js'
 
 export interface Scene {
+  view: Container
   update(delta: number): void
   destroy(): void
 }
@@ -16,6 +17,7 @@ export class SceneManager {
       this.app.stage.removeChildren()
     }
     this.current = scene
+    this.app.stage.addChild(scene.view)
   }
 
   update(delta: number) {

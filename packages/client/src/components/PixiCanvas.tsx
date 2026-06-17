@@ -10,6 +10,7 @@ export default function PixiCanvas() {
   useEffect(() => {
     const app = new Application()
     let manager: SceneManager
+    let destroyed = false
 
     async function init() {
       await app.init({
@@ -20,17 +21,19 @@ export default function PixiCanvas() {
         resizeTo: window,
       })
 
+      if (destroyed) {
+        app.destroy(true)
+        return
+      }
+
       mountRef.current?.appendChild(app.canvas)
 
       manager = new SceneManager(app)
 
       const menu = new MenuScene(() => {
-        const game = new GameScene()
-        app.stage.addChild(game.view)
-        manager.switch(game)
+        manager.switch(new GameScene())
       })
 
-      app.stage.addChild(menu.view)
       manager.switch(menu)
 
       app.ticker.add(ticker => manager.update(ticker.deltaTime))
@@ -39,7 +42,10 @@ export default function PixiCanvas() {
     init()
 
     return () => {
-      app.destroy(true)
+      destroyed = true
+      if (app.renderer) {
+        app.destroy(true)
+      }
     }
   }, [])
 
