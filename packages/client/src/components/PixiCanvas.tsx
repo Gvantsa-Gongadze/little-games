@@ -4,7 +4,11 @@ import { SceneManager } from '@/game/SceneManager'
 import { MenuScene } from '@/game/scenes/MenuScene'
 import { GameScene } from '@/game/scenes/GameScene'
 
-export default function PixiCanvas() {
+interface Props {
+  onGameOver?: (score: number) => void
+}
+
+export default function PixiCanvas({ onGameOver }: Props) {
   const mountRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -31,7 +35,7 @@ export default function PixiCanvas() {
       manager = new SceneManager(app)
 
       const menu = new MenuScene(() => {
-        manager.switch(new GameScene())
+        manager.switch(new GameScene(onGameOver))
       })
 
       manager.switch(menu)

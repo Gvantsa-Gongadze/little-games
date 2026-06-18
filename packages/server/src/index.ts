@@ -6,8 +6,10 @@ import { GameRoom } from './rooms/GameRoom'
 
 const app = express()
 
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? 'http://localhost:5173').split(',')
+
 app.use(cors({
-  origin: ['http://localhost:5173', 'https://your-vercel-app.vercel.app'],
+  origin: ALLOWED_ORIGINS,
   credentials: true,
 }))
 app.use(express.json())

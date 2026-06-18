@@ -7,8 +7,7 @@ const SPEED = 4
 export class GameScene implements Scene {
   readonly view = new Container()
   private player: Graphics
-
-  constructor() {
+  constructor(_onGameOver?: (score: number) => void) {
     this.player = new Graphics()
       .rect(0, 0, 40, 40)
       .fill('#00ff99')

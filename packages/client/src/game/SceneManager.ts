@@ -8,8 +8,11 @@ export interface Scene {
 
 export class SceneManager {
   private current: Scene | null = null
+  private app: Application
 
-  constructor(private app: Application) {}
+  constructor(app: Application) {
+    this.app = app
+  }
 
   switch(scene: Scene) {
     if (this.current) {
