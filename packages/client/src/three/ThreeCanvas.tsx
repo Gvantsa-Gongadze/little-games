@@ -1,10 +1,12 @@
-import { useEffect, useRef } from 'react'
-import { WebGLRenderer, Clock } from 'three'
+import { useEffect, useRef, useState } from 'react'
+import { WebGLRenderer } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { CubeScene } from './scenes/CubeScene'
+import LoadingSpinner from '@/components/LoadingSpinner'
 
 export default function ThreeCanvas() {
   const mountRef = useRef<HTMLDivElement>(null)
+  const [ready, setReady] = useState(false)
 
   useEffect(() => {
     const mount = mountRef.current!
@@ -20,17 +22,20 @@ export default function ThreeCanvas() {
     const controls = new OrbitControls(game.camera, renderer.domElement)
     controls.enableDamping = true
 
-    const clock = new Clock()
+    let lastTime = performance.now()
     let animId: number
 
     function animate() {
       animId = requestAnimationFrame(animate)
-      const delta = clock.getDelta()
-      game.update(delta * 60)
+      const now = performance.now()
+      const delta = (now - lastTime) / (1000 / 60)
+      lastTime = now
+      game.update(delta)
       controls.update()
       renderer.render(game.scene, game.camera)
     }
     animate()
+    setReady(true)
 
     const observer = new ResizeObserver(() => {
       const w = mount.clientWidth
@@ -51,5 +56,10 @@ export default function ThreeCanvas() {
     }
   }, [])
 
-  return <div ref={mountRef} style={{ width: '100vw', height: '100vh' }} />
+  return (
+    <>
+      {!ready && <LoadingSpinner />}
+      <div ref={mountRef} style={{ width: '100vw', height: '100vh' }} />
+    </>
+  )
 }

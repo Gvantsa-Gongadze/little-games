@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Application } from 'pixi.js'
 import { SceneManager } from '@/game/SceneManager'
 import { MenuScene } from '@/game/scenes/MenuScene'
 import { GameScene } from '@/game/scenes/GameScene'
+import LoadingSpinner from './LoadingSpinner'
 
 interface Props {
   onGameOver?: (score: number) => void
@@ -10,6 +11,7 @@ interface Props {
 
 export default function PixiCanvas({ onGameOver }: Props) {
   const mountRef = useRef<HTMLDivElement>(null)
+  const [ready, setReady] = useState(false)
 
   useEffect(() => {
     const app = new Application()
@@ -41,6 +43,7 @@ export default function PixiCanvas({ onGameOver }: Props) {
       manager.switch(menu)
 
       app.ticker.add(ticker => manager.update(ticker.deltaTime))
+      setReady(true)
     }
 
     init()
@@ -53,5 +56,10 @@ export default function PixiCanvas({ onGameOver }: Props) {
     }
   }, [])
 
-  return <div ref={mountRef} style={{ width: '100vw', height: '100vh' }} />
+  return (
+    <>
+      {!ready && <LoadingSpinner />}
+      <div ref={mountRef} style={{ width: '100vw', height: '100vh' }} />
+    </>
+  )
 }
