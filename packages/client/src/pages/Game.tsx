@@ -4,6 +4,7 @@ import { joinGameRoom } from '@/game/ColyseusClient'
 import { submitScore } from '@/lib/scores'
 import { supabase } from '@/lib/supabase'
 import PixiCanvas from '@/components/PixiCanvas'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 
 export default function Game() {
   const roomRef = useRef<Room | null>(null)
@@ -23,5 +24,9 @@ export default function Game() {
     }
   }
 
-  return <PixiCanvas onGameOver={handleGameOver} />
+  return (
+    <ErrorBoundary>
+      <PixiCanvas onGameOver={handleGameOver} />
+    </ErrorBoundary>
+  )
 }

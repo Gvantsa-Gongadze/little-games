@@ -2,23 +2,28 @@ import { useEffect, useRef, useState } from 'react'
 import { WebGLRenderer } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { CubeScene } from './scenes/CubeScene'
-import LoadingSpinner from '@/components/LoadingSpinner'
+
+function detectWebGL(): Error | null {
+  const canvas = document.createElement('canvas')
+  const gl = canvas.getContext('webgl2') || canvas.getContext('webgl')
+  if (!gl) return new Error('WebGL is not supported in this browser')
+  return null
+}
 
 export default function ThreeCanvas() {
   const mountRef = useRef<HTMLDivElement>(null)
-  const [ready, setReady] = useState(false)
+  const [webGLError] = useState<Error | null>(detectWebGL)
 
   useEffect(() => {
-    const mount = mountRef.current!
-    const width = mount.clientWidth
-    const height = mount.clientHeight
+    if (webGLError) return
 
+    const mount = mountRef.current!
     const renderer = new WebGLRenderer({ antialias: true })
     renderer.setPixelRatio(window.devicePixelRatio)
-    renderer.setSize(width, height)
+    renderer.setSize(mount.clientWidth, mount.clientHeight)
     mount.appendChild(renderer.domElement)
 
-    const game = new CubeScene(width, height)
+    const game = new CubeScene(mount.clientWidth, mount.clientHeight)
     const controls = new OrbitControls(game.camera, renderer.domElement)
     controls.enableDamping = true
 
@@ -35,7 +40,6 @@ export default function ThreeCanvas() {
       renderer.render(game.scene, game.camera)
     }
     animate()
-    setReady(true)
 
     const observer = new ResizeObserver(() => {
       const w = mount.clientWidth
@@ -54,12 +58,10 @@ export default function ThreeCanvas() {
       renderer.dispose()
       mount.removeChild(renderer.domElement)
     }
-  }, [])
+  }, [webGLError])
 
-  return (
-    <>
-      {!ready && <LoadingSpinner />}
-      <div ref={mountRef} style={{ width: '100vw', height: '100vh' }} />
-    </>
-  )
+  // All hooks above — safe to throw now
+  if (webGLError) throw webGLError
+
+  return <div ref={mountRef} style={{ width: '100vw', height: '100vh' }} />
 }
