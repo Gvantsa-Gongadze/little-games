@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react'
 import { Room } from 'colyseus.js'
 import { joinGameRoom } from '@/game/ColyseusClient'
+import { submitScore } from '@/lib/scores'
+import { supabase } from '@/lib/supabase'
 import PixiCanvas from '@/components/PixiCanvas'
 
 export default function Game() {
@@ -9,15 +11,17 @@ export default function Game() {
   useEffect(() => {
     joinGameRoom('Player').then(room => {
       roomRef.current = room
-      room.state.players.onAdd((player: any, sessionId: string) => {
-        console.log(`Player added: ${sessionId}`, player)
-      })
     })
 
-    return () => {
-      roomRef.current?.leave()
-    }
+    return () => { roomRef.current?.leave() }
   }, [])
 
-  return <PixiCanvas />
+  async function handleGameOver(score: number) {
+    const { data } = await supabase.auth.getUser()
+    if (data.user) {
+      await submitScore('2d-game', score, data.user.id)
+    }
+  }
+
+  return <PixiCanvas onGameOver={handleGameOver} />
 }
