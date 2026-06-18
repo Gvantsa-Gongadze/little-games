@@ -9,7 +9,9 @@
     "dev:server": "pnpm --filter server dev",
     "dev": "pnpm run dev:client & pnpm run dev:server",
     "build:client": "pnpm --filter client build",
-    "build:server": "pnpm --filter server build"
+    "build:server": "pnpm --filter server build",
+    "typecheck": "pnpm --filter client typecheck && pnpm --filter server typecheck",
+    "lint": "pnpm --filter client lint"
   },
   "packageManager": "pnpm@9.0.0"
 }
