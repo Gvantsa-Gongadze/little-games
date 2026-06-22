@@ -1,4 +1,4 @@
-import { Container, Text } from 'pixi.js'
+import { Container, Graphics, Text } from 'pixi.js'
 import type { Scene } from '../SceneManager'
 import { Ship }     from '../entities/Ship'
 import { Bullet }   from '../entities/Bullet'
@@ -8,8 +8,10 @@ import { wrap, circlesOverlap, randomEdgePosition } from '../utils/math'
 const W = () => window.innerWidth
 const H = () => window.innerHeight
 
-const SCORE_MAP = { large: 20, medium: 50, small: 100 }
+const SCORE_MAP   = { large: 20, medium: 50, small: 100 }
 const FIRE_COOLDOWN = 12
+const GREEN = '#33ff66'
+const FONT  = '"Press Start 2P", monospace'
 
 export class AsteroidsScene implements Scene {
   view = new Container()
@@ -27,25 +29,78 @@ export class AsteroidsScene implements Scene {
 
   private scoreText: Text
   private livesText: Text
+  private waveText:  Text
   private msgText:   Text
+  private waveAnnounce: Text
 
   constructor(onGameOver?: (score: number) => void) {
     this.onGameOver = onGameOver
 
-    // HUD
-    this.scoreText = new Text({ text: 'Score: 0',  style: { fill: '#fff', fontSize: 20, fontFamily: 'monospace' } })
-    this.livesText = new Text({ text: 'Lives: 3',  style: { fill: '#fff', fontSize: 20, fontFamily: 'monospace' } })
-    this.msgText   = new Text({ text: '',          style: { fill: '#fff', fontSize: 28, fontFamily: 'monospace', align: 'center' } })
+    this.view.addChild(this.buildStarfield())
 
-    this.scoreText.position.set(20, 20)
-    this.livesText.position.set(20, 48)
+    // HUD — score top-center
+    this.scoreText = new Text({
+      text: 'SCORE\n00000',
+      style: { fill: GREEN, fontSize: 12, fontFamily: FONT, align: 'center', lineHeight: 20 },
+    })
+    this.scoreText.anchor.set(0.5, 0)
+    this.scoreText.position.set(W() / 2, 16)
+
+    // lives top-left
+    this.livesText = new Text({
+      text: 'LIVES  ♥ ♥ ♥',
+      style: { fill: GREEN, fontSize: 10, fontFamily: FONT },
+    })
+    this.livesText.position.set(20, 20)
+
+    // wave top-right
+    this.waveText = new Text({
+      text: 'WAVE  1',
+      style: { fill: GREEN, fontSize: 10, fontFamily: FONT },
+    })
+    this.waveText.anchor.set(1, 0)
+    this.waveText.position.set(W() - 20, 20)
+
+    // wave announcement (center, fades out)
+    this.waveAnnounce = new Text({
+      text: '',
+      style: { fill: GREEN, fontSize: 18, fontFamily: FONT, align: 'center' },
+    })
+    this.waveAnnounce.anchor.set(0.5)
+    this.waveAnnounce.position.set(W() / 2, H() / 2 - 60)
+    this.waveAnnounce.alpha = 0
+
+    // game over / message text
+    this.msgText = new Text({
+      text: '',
+      style: { fill: GREEN, fontSize: 16, fontFamily: FONT, align: 'center', lineHeight: 28 },
+    })
+    this.msgText.anchor.set(0.5)
+    this.msgText.position.set(W() / 2, H() / 2)
 
     this.ship = new Ship()
     this.ship.reset(W() / 2, H() / 2)
-    this.view.addChild(this.ship.view, this.scoreText, this.livesText, this.msgText)
+
+    this.view.addChild(
+      this.ship.view,
+      this.scoreText, this.livesText, this.waveText,
+      this.waveAnnounce, this.msgText,
+    )
 
     this.spawnWave()
     this.setupInput()
+  }
+
+  private buildStarfield(): Graphics {
+    const g = new Graphics()
+    for (let i = 0; i < 130; i++) {
+      const x     = Math.random() * W()
+      const y     = Math.random() * H()
+      const size  = Math.random() < 0.7 ? 0.5 : 1
+      const alpha = 0.1 + Math.random() * 0.35
+      g.circle(x, y, size).fill({ color: 0x33ff66, alpha })
+    }
+    return g
   }
 
   private setupInput() {
@@ -62,6 +117,18 @@ export class AsteroidsScene implements Scene {
 
   private spawnWave() {
     this.wave++
+    this.waveText.text = `WAVE  ${this.wave}`
+
+    this.waveAnnounce.text  = `WAVE ${this.wave}`
+    this.waveAnnounce.alpha = 1
+    let t = 0
+    const fade = () => {
+      t += 0.02
+      this.waveAnnounce.alpha = Math.max(0, 1 - t)
+      if (this.waveAnnounce.alpha > 0) requestAnimationFrame(fade)
+    }
+    setTimeout(() => requestAnimationFrame(fade), 800)
+
     const count = 2 + this.wave
     for (let i = 0; i < count; i++) {
       const pos = randomEdgePosition(W(), H())
@@ -74,11 +141,9 @@ export class AsteroidsScene implements Scene {
   update(delta: number) {
     if (this.gameOver) return
 
-    // Ship
     this.ship.update(delta, this.keys)
     wrap(this.ship, W(), H())
 
-    // Shoot
     this.fireTimer -= delta
     if (this.keys.has('Space') && this.fireTimer <= 0) {
       this.fireTimer = FIRE_COOLDOWN
@@ -87,18 +152,10 @@ export class AsteroidsScene implements Scene {
       this.view.addChild(b.view)
     }
 
-    // Bullets
-    for (const b of this.bullets) {
-      b.update(delta)
-      wrap(b, W(), H())
-    }
+    for (const b of this.bullets) { b.update(delta); wrap(b, W(), H()) }
+    for (const a of this.asteroids) { a.update(delta); wrap(a, W(), H()) }
 
-    // Asteroids
-    for (const a of this.asteroids) {
-      a.update(delta)
-      wrap(a, W(), H())
-    }
-
+    this.checkAsteroidCollisions()
     this.checkBulletCollisions()
     this.checkShipCollisions()
     this.cleanup()
@@ -106,15 +163,58 @@ export class AsteroidsScene implements Scene {
     if (this.asteroids.length === 0) this.spawnWave()
   }
 
+  private checkAsteroidCollisions() {
+    for (let i = 0; i < this.asteroids.length; i++) {
+      for (let j = i + 1; j < this.asteroids.length; j++) {
+        const a  = this.asteroids[i]
+        const b  = this.asteroids[j]
+        const dx = b.x - a.x
+        const dy = b.y - a.y
+        const distSq  = dx * dx + dy * dy
+        const minDist = a.radius + b.radius
+
+        if (distSq >= minDist * minDist || distSq === 0) continue
+
+        const dist = Math.sqrt(distSq)
+        const nx   = dx / dist
+        const ny   = dy / dist
+
+        // Push apart so they don't overlap
+        const overlap = minDist - dist
+        const ma      = a.radius * a.radius  // mass ∝ area
+        const mb      = b.radius * b.radius
+        const total   = ma + mb
+        a.x -= nx * overlap * (mb / total)
+        a.y -= ny * overlap * (mb / total)
+        b.x += nx * overlap * (ma / total)
+        b.y += ny * overlap * (ma / total)
+
+        // Elastic impulse
+        const relVx = a.vx - b.vx
+        const relVy = a.vy - b.vy
+        const velAlongNormal = relVx * nx + relVy * ny
+        if (velAlongNormal > 0) continue   // already separating
+
+        const restitution = 0.85
+        const impulse = -(1 + restitution) * velAlongNormal / (1 / ma + 1 / mb)
+        a.vx += (impulse / ma) * nx
+        a.vy += (impulse / ma) * ny
+        b.vx -= (impulse / mb) * nx
+        b.vy -= (impulse / mb) * ny
+      }
+    }
+  }
+
   private checkBulletCollisions() {
     for (const b of this.bullets) {
       for (const a of this.asteroids) {
+        if (!a.view.visible) continue
         if (circlesOverlap(b.x, b.y, b.radius, a.x, a.y, a.radius)) {
           b.life = 0
           a.view.visible = false
 
           this.score += SCORE_MAP[a.size]
-          this.scoreText.text = `Score: ${this.score}`
+          this.scoreText.text = `SCORE\n${String(this.score).padStart(5, '0')}`
 
           const pieces = a.split()
           for (const p of pieces) {
@@ -129,38 +229,31 @@ export class AsteroidsScene implements Scene {
 
   private checkShipCollisions() {
     if (this.ship.invincible) return
-
     for (const a of this.asteroids) {
+      if (!a.view.visible) continue
       if (circlesOverlap(this.ship.x, this.ship.y, this.ship.radius, a.x, a.y, a.radius)) {
         this.lives--
-        this.livesText.text = `Lives: ${this.lives}`
+        this.livesText.text = `LIVES  ${'♥ '.repeat(this.lives).trim() || '—'}`
 
-        if (this.lives <= 0) {
-          this.endGame()
-        } else {
-          this.ship.reset(W() / 2, H() / 2)
-        }
+        if (this.lives <= 0) this.endGame()
+        else                 this.ship.reset(W() / 2, H() / 2)
         break
       }
     }
   }
 
   private cleanup() {
-    const deadBullets = this.bullets.filter(b => b.dead)
-    deadBullets.forEach(b => { b.view.destroy(); })
+    this.bullets.filter(b => b.dead).forEach(b => b.view.destroy())
     this.bullets = this.bullets.filter(b => !b.dead)
 
-    const deadAsteroids = this.asteroids.filter(a => !a.view.visible)
-    deadAsteroids.forEach(a => { a.view.destroy() })
+    this.asteroids.filter(a => !a.view.visible).forEach(a => a.view.destroy())
     this.asteroids = this.asteroids.filter(a => a.view.visible)
   }
 
   private endGame() {
-    this.gameOver = true
-    this.ship.view.visible = false
-    this.msgText.text = `GAME OVER\nScore: ${this.score}\n\nPress R to restart`
-    this.msgText.x = W() / 2 - this.msgText.width / 2
-    this.msgText.y = H() / 2 - this.msgText.height / 2
+    this.gameOver           = true
+    this.ship.view.visible  = false
+    this.msgText.text       = `GAME OVER\n\nSCORE  ${String(this.score).padStart(5, '0')}\n\nPRESS R TO RETRY`
 
     const restart = (e: KeyboardEvent) => {
       if (e.code === 'KeyR') {

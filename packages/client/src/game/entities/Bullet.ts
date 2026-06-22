@@ -20,7 +20,7 @@ export class Bullet {
 
     this.view = new Graphics()
       .circle(0, 0, this.radius)
-      .fill(0xffff66)
+      .fill(0xffffff)
   }
 
   update(delta: number) {

@@ -48,5 +48,22 @@ export default function AsteroidsCanvas({ onGameOver }: Props) {
     return () => { destroyed = true; if (app.renderer) app.destroy(true) }
   }, [])
 
-  return <div ref={mountRef} style={{ width: '100vw', height: '100vh' }} />
+  return (
+    <div style={{ position: 'relative', width: '100vw', height: '100vh', background: '#000' }}>
+      {/* canvas gets a phosphor glow */}
+      <div ref={mountRef} style={{ width: '100%', height: '100%', filter: 'drop-shadow(0 0 6px #33ff66)' }} />
+
+      {/* CRT scanlines overlay */}
+      <div style={{
+        position: 'absolute', inset: 0, pointerEvents: 'none',
+        background: 'repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.18) 3px, rgba(0,0,0,0.18) 4px)',
+      }} />
+
+      {/* vignette */}
+      <div style={{
+        position: 'absolute', inset: 0, pointerEvents: 'none',
+        background: 'radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.65) 100%)',
+      }} />
+    </div>
+  )
 }

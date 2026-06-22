@@ -24,13 +24,13 @@ export class Ship {
       .lineTo(0, 8)
       .lineTo(-13, 14)
       .lineTo(0, -20)
-      .stroke({ color: 0xffffff, width: 2 })
+      .stroke({ color: 0x33ff66, width: 2 })
 
     this.flame = new Graphics()
       .moveTo(-6, 10)
       .lineTo(0, 26)
       .lineTo(6, 10)
-      .stroke({ color: 0xff6600, width: 2 })
+      .stroke({ color: 0xffff00, width: 2 })
 
     this.flame.visible = false
     this.view.addChild(this.hull, this.flame)

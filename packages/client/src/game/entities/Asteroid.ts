@@ -41,7 +41,7 @@ export class Asteroid {
 
     return new Graphics()
       .poly(points)
-      .stroke({ color: 0xaaaaaa, width: 2 })
+      .stroke({ color: 0x33ff66, width: 1.5 })
   }
 
   update(delta: number) {
