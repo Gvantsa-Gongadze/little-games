@@ -3,6 +3,7 @@ import type { Scene } from '../SceneManager'
 import { Ship }              from '../entities/Ship'
 import { Bullet }            from '../entities/Bullet'
 import { Asteroid }          from '../entities/Asteroid'
+import { UFO, UFO_SCORE }    from '../entities/UFO'
 import { Particle, explode } from '../entities/Particle'
 import { RetroAudio }        from '../audio/RetroAudio'
 import { wrap, circlesOverlap, randomEdgePosition } from '../utils/math'
@@ -19,9 +20,12 @@ export class AsteroidsScene implements Scene {
   view = new Container()
 
   private ship:      Ship
-  private bullets:   Bullet[]   = []
-  private asteroids: Asteroid[] = []
-  private particles: Particle[] = []
+  private bullets:     Bullet[]   = []
+  private asteroids:   Asteroid[] = []
+  private particles:   Particle[] = []
+  private ufoBullets:  Bullet[]   = []
+  private ufo:         UFO | null = null
+  private ufoTimer     = 1800     // ~30 s at 60 fps
   private keys       = new Set<string>()
   private score      = 0
   private lives      = 3
@@ -178,13 +182,77 @@ export class AsteroidsScene implements Scene {
     for (const b of this.bullets)  { b.update(delta); wrap(b, W(), H()) }
     for (const a of this.asteroids) { a.update(delta); wrap(a, W(), H()) }
     for (const p of this.particles)   p.update(delta)
+    for (const b of this.ufoBullets) { b.update(delta); wrap(b, W(), H()) }
+
+    // UFO spawn countdown
+    if (!this.ufo) {
+      this.ufoTimer -= delta
+      if (this.ufoTimer <= 0) this.spawnUFO()
+    } else {
+      this.ufo.update(delta)
+      if (!this.ufo.alive) {
+        this.ufo.view.destroy()
+        this.ufo = null
+        this.ufoTimer = 1500 + Math.random() * 600
+      } else if (this.ufo.fireTimer <= 0) {
+        this.ufo.resetFireTimer()
+        const angle = this.ufo.aimAngle(this.ship.x, this.ship.y)
+        const b = new Bullet(this.ufo.x, this.ufo.y, angle, 0xff4422)
+        this.ufoBullets.push(b)
+        this.view.addChild(b.view)
+      }
+    }
 
     this.checkAsteroidCollisions()
     this.checkBulletCollisions()
     this.checkShipCollisions()
+    this.checkUFOCollisions()
     this.cleanup()
 
     if (this.asteroids.length === 0) this.spawnWave()
+  }
+
+  private spawnUFO() {
+    const size = Math.random() < 0.75 ? 'large' : 'small' as const
+    this.ufo = new UFO(size)
+    this.view.addChild(this.ufo.view)
+    RetroAudio.ufoAlert()
+  }
+
+  private checkUFOCollisions() {
+    if (!this.ufo) return
+
+    // Player bullets → UFO
+    for (const b of this.bullets) {
+      if (circlesOverlap(b.x, b.y, b.radius, this.ufo.x, this.ufo.y, this.ufo.radius)) {
+        b.life = 0
+        this.score += UFO_SCORE[this.ufo.size]
+        this.scoreText.text = `SCORE\n${String(this.score).padStart(5, '0')}`
+        RetroAudio.explode('medium')
+        const frags = explode(this.ufo.x, this.ufo.y, 0, 0, 'medium')
+        for (const p of frags) { this.particles.push(p); this.view.addChild(p.view) }
+        this.ufo.view.destroy()
+        this.ufo = null
+        this.ufoTimer = 1500 + Math.random() * 600
+        return
+      }
+    }
+
+    // UFO bullets → ship
+    if (!this.ship.invincible) {
+      for (const b of this.ufoBullets) {
+        if (circlesOverlap(b.x, b.y, b.radius, this.ship.x, this.ship.y, this.ship.radius)) {
+          b.life = 0
+          this.lives--
+          this.livesText.text = `LIVES  ${'♥ '.repeat(this.lives).trim() || '—'}`
+          this.shake = 10
+          RetroAudio.die()
+          if (this.lives <= 0) this.endGame()
+          else                 this.ship.reset(W() / 2, H() / 2)
+          return
+        }
+      }
+    }
   }
 
   private checkAsteroidCollisions() {
@@ -284,6 +352,9 @@ export class AsteroidsScene implements Scene {
 
     this.particles.filter(p => p.dead).forEach(p => p.view.destroy())
     this.particles = this.particles.filter(p => !p.dead)
+
+    this.ufoBullets.filter(b => b.dead).forEach(b => b.view.destroy())
+    this.ufoBullets = this.ufoBullets.filter(b => !b.dead)
   }
 
   private endGame() {
@@ -303,6 +374,7 @@ export class AsteroidsScene implements Scene {
   destroy() {
     this._removeInput()
     RetroAudio.stopThrust()
+    if (this.ufo) { this.ufo.view.destroy(); this.ufo = null }
     this.view.destroy({ children: true })
   }
 }

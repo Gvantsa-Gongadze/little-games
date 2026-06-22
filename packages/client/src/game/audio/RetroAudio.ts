@@ -92,6 +92,25 @@ class RetroAudioClass {
     this.thrustGain = null
   }
 
+  // Two-tone blip warning when UFO appears
+  ufoAlert() {
+    const ctx = this.getCtx()
+    const freqs = [330, 550]
+    freqs.forEach((freq, i) => {
+      const osc  = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.type = 'square'
+      osc.frequency.value = freq
+      const t = ctx.currentTime + i * 0.13
+      gain.gain.setValueAtTime(0.14, t)
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.1)
+      osc.start(t)
+      osc.stop(t + 0.1)
+    })
+  }
+
   // Descending sawtooth sweep on death
   die() {
     const ctx  = this.getCtx()

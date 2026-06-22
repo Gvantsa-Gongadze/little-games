@@ -12,7 +12,7 @@ export class Bullet {
   radius = 3
   life   = LIFETIME
 
-  constructor(x: number, y: number, angle: number) {
+  constructor(x: number, y: number, angle: number, color = 0xffffff) {
     this.x  = x
     this.y  = y
     this.vx = Math.sin(angle) * SPEED
@@ -20,7 +20,7 @@ export class Bullet {
 
     this.view = new Graphics()
       .circle(0, 0, this.radius)
-      .fill(0xffffff)
+      .fill(color)
   }
 
   update(delta: number) {
