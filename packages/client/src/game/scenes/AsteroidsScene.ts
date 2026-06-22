@@ -151,10 +151,15 @@ export class AsteroidsScene implements Scene {
     }
     setTimeout(() => requestAnimationFrame(fade), 800)
 
+    // speed caps at 2.5× on wave 13+
+    const speedMult = Math.min(1 + (this.wave - 1) * 0.12, 2.5)
+    // UFO arrives sooner each wave, minimum 15 s
+    this.ufoTimer = Math.max(900, 1800 - this.wave * 60)
+
     const count = 2 + this.wave
     for (let i = 0; i < count; i++) {
       const pos = randomEdgePosition(W(), H())
-      const ast = new Asteroid('large', pos.x, pos.y)
+      const ast = new Asteroid('large', pos.x, pos.y, undefined, speedMult)
       this.asteroids.push(ast)
       this.view.addChild(ast.view)
     }

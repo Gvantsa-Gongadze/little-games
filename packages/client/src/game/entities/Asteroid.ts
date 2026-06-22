@@ -6,22 +6,24 @@ const RADIUS: Record<AsteroidSize, number> = { large: 45, medium: 25, small: 13 
 const SPEED:  Record<AsteroidSize, number> = { large: 1.2, medium: 1.8, small: 2.8 }
 
 export class Asteroid {
-  view:   Graphics
-  x:      number
-  y:      number
-  vx:     number
-  vy:     number
-  radius: number
-  size:   AsteroidSize
+  view:      Graphics
+  x:         number
+  y:         number
+  vx:        number
+  vy:        number
+  radius:    number
+  size:      AsteroidSize
+  private speedMult: number
 
-  constructor(size: AsteroidSize, x: number, y: number, angle?: number) {
-    this.size   = size
-    this.x      = x
-    this.y      = y
-    this.radius = RADIUS[size]
+  constructor(size: AsteroidSize, x: number, y: number, angle?: number, speedMult = 1) {
+    this.size      = size
+    this.x         = x
+    this.y         = y
+    this.radius    = RADIUS[size]
+    this.speedMult = speedMult
 
     const a  = angle ?? Math.random() * Math.PI * 2
-    const sp = SPEED[size] * (0.8 + Math.random() * 0.4)
+    const sp = SPEED[size] * speedMult * (0.8 + Math.random() * 0.4)
     this.vx  = Math.cos(a) * sp
     this.vy  = Math.sin(a) * sp
 
@@ -57,8 +59,8 @@ export class Asteroid {
     const next: AsteroidSize = this.size === 'large' ? 'medium' : 'small'
     const baseAngle = Math.random() * Math.PI * 2
     return [
-      new Asteroid(next, this.x, this.y, baseAngle),
-      new Asteroid(next, this.x, this.y, baseAngle + Math.PI),
+      new Asteroid(next, this.x, this.y, baseAngle,            this.speedMult),
+      new Asteroid(next, this.x, this.y, baseAngle + Math.PI,  this.speedMult),
     ]
   }
 }
