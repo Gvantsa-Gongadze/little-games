@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react'
-import { Application } from 'pixi.js'
-import { SceneManager }    from '@/game/SceneManager'
-import { AsteroidsScene }  from '@/game/scenes/AsteroidsScene'
+import { useEffect, useRef, useState } from 'react'
+import { Application }          from 'pixi.js'
+import { SceneManager }         from '@/game/SceneManager'
+import { AsteroidsScene }       from '@/game/scenes/AsteroidsScene'
+import { LeaderboardOverlay }   from './LeaderboardOverlay'
 
 interface Props {
   onGameOver?: (score: number) => void
@@ -10,6 +11,8 @@ interface Props {
 export default function AsteroidsCanvas({ onGameOver }: Props) {
   const mountRef      = useRef<HTMLDivElement>(null)
   const onGameOverRef = useRef(onGameOver)
+  const restartRef    = useRef<() => void>(() => {})
+  const [gameOverScore, setGameOverScore] = useState<number | null>(null)
 
   useEffect(() => {
     onGameOverRef.current = onGameOver
@@ -36,9 +39,10 @@ export default function AsteroidsCanvas({ onGameOver }: Props) {
       const startScene = () => {
         manager.switch(new AsteroidsScene((score) => {
           onGameOverRef.current?.(score)
-          startScene()
+          setGameOverScore(score)
         }))
       }
+      restartRef.current = startScene
       startScene()
 
       app.ticker.add(ticker => manager.update(ticker.deltaTime))
@@ -47,6 +51,11 @@ export default function AsteroidsCanvas({ onGameOver }: Props) {
     init()
     return () => { destroyed = true; if (app.renderer) app.destroy(true) }
   }, [])
+
+  const handleRestart = () => {
+    setGameOverScore(null)
+    restartRef.current()
+  }
 
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh', background: '#000' }}>
@@ -64,6 +73,11 @@ export default function AsteroidsCanvas({ onGameOver }: Props) {
         position: 'absolute', inset: 0, pointerEvents: 'none',
         background: 'radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.65) 100%)',
       }} />
+
+      {/* leaderboard overlay on game over */}
+      {gameOverScore !== null && (
+        <LeaderboardOverlay score={gameOverScore} onRestart={handleRestart} />
+      )}
     </div>
   )
 }

@@ -428,17 +428,12 @@ export class AsteroidsScene implements Scene {
   }
 
   private endGame() {
-    this.gameOver           = true
-    this.ship.view.visible  = false
-    this.msgText.text       = `GAME OVER\n\nSCORE  ${String(this.score).padStart(5, '0')}\n\nPRESS R TO RETRY`
+    this.gameOver          = true
+    this.ship.view.visible = false
+    this.msgText.text      = `GAME OVER`
 
-    const restart = (e: KeyboardEvent) => {
-      if (e.code === 'KeyR') {
-        window.removeEventListener('keydown', restart)
-        this.onGameOver?.(this.score)
-      }
-    }
-    window.addEventListener('keydown', restart)
+    // brief pause so the player sees what killed them, then hand off to React
+    setTimeout(() => this.onGameOver?.(this.score), 600)
   }
 
   destroy() {
