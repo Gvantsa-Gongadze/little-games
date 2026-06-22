@@ -3,6 +3,7 @@ import { Application }          from 'pixi.js'
 import { SceneManager }         from '@/game/SceneManager'
 import { AsteroidsScene }       from '@/game/scenes/AsteroidsScene'
 import { LeaderboardOverlay }   from './LeaderboardOverlay'
+import { TouchControls }        from './TouchControls'
 
 interface Props {
   onGameOver?: (score: number) => void
@@ -73,6 +74,9 @@ export default function AsteroidsCanvas({ onGameOver }: Props) {
         position: 'absolute', inset: 0, pointerEvents: 'none',
         background: 'radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.65) 100%)',
       }} />
+
+      {/* touch controls — rendered only on touch devices */}
+      <TouchControls />
 
       {/* leaderboard overlay on game over */}
       {gameOverScore !== null && (
