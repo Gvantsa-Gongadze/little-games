@@ -8,9 +8,12 @@ interface Props {
 }
 
 export default function AsteroidsCanvas({ onGameOver }: Props) {
-  const mountRef     = useRef<HTMLDivElement>(null)
+  const mountRef      = useRef<HTMLDivElement>(null)
   const onGameOverRef = useRef(onGameOver)
-  onGameOverRef.current = onGameOver
+
+  useEffect(() => {
+    onGameOverRef.current = onGameOver
+  })
 
   useEffect(() => {
     const app = new Application()
