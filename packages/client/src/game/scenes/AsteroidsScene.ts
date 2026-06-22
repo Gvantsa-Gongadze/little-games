@@ -26,6 +26,7 @@ export class AsteroidsScene implements Scene {
   private lives      = 3
   private wave       = 0
   private fireTimer  = 0
+  private shake      = 0
   private gameOver   = false
   private onGameOver?: (score: number) => void
 
@@ -154,6 +155,17 @@ export class AsteroidsScene implements Scene {
       this.view.addChild(b.view)
     }
 
+    // screen shake
+    if (this.shake > 0.4) {
+      this.view.x = (Math.random() - 0.5) * 2 * this.shake
+      this.view.y = (Math.random() - 0.5) * 2 * this.shake
+      this.shake *= 0.82
+    } else if (this.shake > 0) {
+      this.view.x = 0
+      this.view.y = 0
+      this.shake  = 0
+    }
+
     for (const b of this.bullets)  { b.update(delta); wrap(b, W(), H()) }
     for (const a of this.asteroids) { a.update(delta); wrap(a, W(), H()) }
     for (const p of this.particles)   p.update(delta)
@@ -244,6 +256,7 @@ export class AsteroidsScene implements Scene {
         this.lives--
         this.livesText.text = `LIVES  ${'♥ '.repeat(this.lives).trim() || '—'}`
 
+        this.shake = 10
         if (this.lives <= 0) this.endGame()
         else                 this.ship.reset(W() / 2, H() / 2)
         break
