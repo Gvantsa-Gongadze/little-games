@@ -72,7 +72,7 @@ export class AsteroidsScene implements Scene {
       text: 'LIVES  ♥ ♥ ♥',
       style: { fill: GREEN, fontSize: 10, fontFamily: FONT },
     })
-    this.livesText.position.set(20, 20)
+    this.livesText.position.set(130, 26)
 
     // wave top-right
     this.waveText = new Text({
@@ -80,7 +80,7 @@ export class AsteroidsScene implements Scene {
       style: { fill: GREEN, fontSize: 10, fontFamily: FONT },
     })
     this.waveText.anchor.set(1, 0)
-    this.waveText.position.set(W() - 20, 20)
+    this.waveText.position.set(W() - 20, 26)
 
     // wave announcement (center, fades out)
     this.waveAnnounce = new Text({
