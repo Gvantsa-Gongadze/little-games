@@ -39,17 +39,20 @@ export class AsteroidsScene implements Scene {
   private shake        = 0
   private wasThrusting = false
   private gameOver     = false
-  private comboMult    = 1   // 1 | 2 | 3
-  private comboTimer   = 0   // frames remaining in combo window
+  private comboMult       = 1     // 1 | 2 | 3
+  private comboTimer      = 0     // frames remaining in combo window
+  private hyperspaceTimer = 0     // cooldown frames remaining
+  private inHyperspace    = false
   private onGameOver?: (score: number) => void
 
-  private scoreText:    Text
-  private livesText:    Text
-  private waveText:     Text
-  private msgText:      Text
-  private waveAnnounce: Text
-  private powerupText:  Text
-  private comboText:    Text
+  private scoreText:      Text
+  private livesText:      Text
+  private waveText:       Text
+  private msgText:        Text
+  private waveAnnounce:   Text
+  private powerupText:    Text
+  private comboText:      Text
+  private hyperspaceText: Text
 
   constructor(onGameOver?: (score: number) => void) {
     this.onGameOver = onGameOver
@@ -113,6 +116,15 @@ export class AsteroidsScene implements Scene {
     this.comboText.position.set(W() / 2, 62)
     this.comboText.alpha = 0
 
+    // hyperspace status — bottom-left
+    this.hyperspaceText = new Text({
+      text: '[SHF] HYPR',
+      style: { fill: GREEN, fontSize: 8, fontFamily: FONT },
+    })
+    this.hyperspaceText.anchor.set(0, 1)
+    this.hyperspaceText.position.set(20, H() - 16)
+    this.hyperspaceText.alpha = 0.35
+
     this.ship = new Ship()
     this.ship.reset(W() / 2, H() / 2)
 
@@ -120,7 +132,7 @@ export class AsteroidsScene implements Scene {
       this.ship.view,
       this.scoreText, this.livesText, this.waveText,
       this.waveAnnounce, this.msgText, this.powerupText,
-      this.comboText,
+      this.comboText, this.hyperspaceText,
     )
 
     this.spawnWave()
@@ -140,8 +152,14 @@ export class AsteroidsScene implements Scene {
   }
 
   private setupInput() {
-    const down = (e: KeyboardEvent) => this.keys.add(e.code)
-    const up   = (e: KeyboardEvent) => this.keys.delete(e.code)
+    const down = (e: KeyboardEvent) => {
+      this.keys.add(e.code)
+      if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight')
+          && !this.inHyperspace && this.hyperspaceTimer <= 0 && !this.gameOver) {
+        this.triggerHyperspace()
+      }
+    }
+    const up = (e: KeyboardEvent) => this.keys.delete(e.code)
     window.addEventListener('keydown', down)
     window.addEventListener('keyup',   up)
     this._removeInput = () => {
@@ -205,11 +223,17 @@ export class AsteroidsScene implements Scene {
     if (this.comboTimer > 0) {
       this.comboTimer -= delta
       if (this.comboTimer <= 0) {
-        this.comboMult  = 1
+        this.comboMult       = 1
         this.comboText.alpha = 0
       } else {
         this.comboText.alpha = this.comboTimer < 30 ? this.comboTimer / 30 : 1
       }
+    }
+
+    // hyperspace cooldown countdown
+    if (this.hyperspaceTimer > 0) {
+      this.hyperspaceTimer -= delta
+      if (this.hyperspaceTimer <= 0) this.updateHyperspaceHUD()
     }
 
     this.fireTimer -= delta
@@ -345,9 +369,64 @@ export class AsteroidsScene implements Scene {
     this.score += baseScore * this.comboMult
     this.scoreText.text = `SCORE\n${String(this.score).padStart(5, '0')}`
     if (this.comboMult > 1) {
-      this.comboText.text  = `${this.comboMult}× COMBO`
+      this.comboText.text       = `${this.comboMult}× COMBO`
       this.comboText.style.fill = this.comboMult === 3 ? '#ff6622' : '#ffdd00'
-      this.comboText.alpha = 1
+      this.comboText.alpha      = 1
+    }
+  }
+
+  private triggerHyperspace() {
+    this.inHyperspace    = true
+    this.hyperspaceTimer = 180   // 3 s cooldown
+    this.ship.view.visible = false
+    RetroAudio.hyperspaceIn()
+    this.updateHyperspaceHUD()
+
+    setTimeout(() => {
+      if (this.gameOver) { this.inHyperspace = false; return }
+
+      const MARGIN = 80
+      const x = MARGIN + Math.random() * (W() - MARGIN * 2)
+      const y = MARGIN + Math.random() * (H() - MARGIN * 2)
+      this.inHyperspace = false
+
+      if (Math.random() < 0.15) {
+        // fatal exit — explosion at the exit point, lose a life
+        const frags = explode(x, y, 0, 0, 'large')
+        for (const p of frags) { this.particles.push(p); this.view.addChild(p.view) }
+        RetroAudio.die()
+        this.shake = 10
+        this.lives--
+        this.livesText.text = `LIVES  ${'♥ '.repeat(this.lives).trim() || '—'}`
+        if (this.lives <= 0) { this.updateHyperspaceHUD(); this.endGame(); return }
+        this.ship.reset(W() / 2, H() / 2)
+      } else {
+        // successful exit — reposition with 1.5 s invincibility
+        this.ship.x              = x
+        this.ship.y              = y
+        this.ship.vx             = 0
+        this.ship.vy             = 0
+        this.ship.view.x         = x
+        this.ship.view.y         = y
+        this.ship.view.rotation  = 0
+        this.ship.view.visible   = true
+        this.ship.invincible     = true
+        setTimeout(() => { this.ship.invincible = false }, 1500)
+        RetroAudio.hyperspaceOut()
+      }
+      this.updateHyperspaceHUD()
+    }, 300)
+  }
+
+  private updateHyperspaceHUD() {
+    if (this.inHyperspace) {
+      this.hyperspaceText.alpha = 0
+    } else if (this.hyperspaceTimer > 0) {
+      this.hyperspaceText.text  = 'HYPR COOLING'
+      this.hyperspaceText.alpha = 0.2
+    } else {
+      this.hyperspaceText.text  = '[SHF] HYPR'
+      this.hyperspaceText.alpha = 0.35
     }
   }
 

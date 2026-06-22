@@ -130,6 +130,36 @@ class RetroAudioClass {
     })
   }
 
+  // Hyperspace departure — rapid descending square sweep
+  hyperspaceIn() {
+    const ctx  = this.getCtx()
+    const osc  = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain); gain.connect(ctx.destination)
+    osc.type = 'square'
+    osc.frequency.setValueAtTime(900, ctx.currentTime)
+    osc.frequency.exponentialRampToValueAtTime(60, ctx.currentTime + 0.28)
+    gain.gain.setValueAtTime(0.18, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.28)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + 0.28)
+  }
+
+  // Hyperspace arrival — rapid ascending square sweep
+  hyperspaceOut() {
+    const ctx  = this.getCtx()
+    const osc  = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain); gain.connect(ctx.destination)
+    osc.type = 'square'
+    osc.frequency.setValueAtTime(80, ctx.currentTime)
+    osc.frequency.exponentialRampToValueAtTime(700, ctx.currentTime + 0.22)
+    gain.gain.setValueAtTime(0.18, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.22)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + 0.22)
+  }
+
   // Descending sawtooth sweep on death
   die() {
     const ctx  = this.getCtx()
