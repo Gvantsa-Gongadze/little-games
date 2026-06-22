@@ -1,8 +1,9 @@
 import { Container, Graphics, Text } from 'pixi.js'
 import type { Scene } from '../SceneManager'
-import { Ship }     from '../entities/Ship'
-import { Bullet }   from '../entities/Bullet'
-import { Asteroid } from '../entities/Asteroid'
+import { Ship }              from '../entities/Ship'
+import { Bullet }            from '../entities/Bullet'
+import { Asteroid }          from '../entities/Asteroid'
+import { Particle, explode } from '../entities/Particle'
 import { wrap, circlesOverlap, randomEdgePosition } from '../utils/math'
 
 const W = () => window.innerWidth
@@ -19,6 +20,7 @@ export class AsteroidsScene implements Scene {
   private ship:      Ship
   private bullets:   Bullet[]   = []
   private asteroids: Asteroid[] = []
+  private particles: Particle[] = []
   private keys       = new Set<string>()
   private score      = 0
   private lives      = 3
@@ -152,8 +154,9 @@ export class AsteroidsScene implements Scene {
       this.view.addChild(b.view)
     }
 
-    for (const b of this.bullets) { b.update(delta); wrap(b, W(), H()) }
+    for (const b of this.bullets)  { b.update(delta); wrap(b, W(), H()) }
     for (const a of this.asteroids) { a.update(delta); wrap(a, W(), H()) }
+    for (const p of this.particles)   p.update(delta)
 
     this.checkAsteroidCollisions()
     this.checkBulletCollisions()
@@ -216,6 +219,12 @@ export class AsteroidsScene implements Scene {
           this.score += SCORE_MAP[a.size]
           this.scoreText.text = `SCORE\n${String(this.score).padStart(5, '0')}`
 
+          const frags = explode(a.x, a.y, a.vx, a.vy, a.size)
+          for (const p of frags) {
+            this.particles.push(p)
+            this.view.addChild(p.view)
+          }
+
           const pieces = a.split()
           for (const p of pieces) {
             this.asteroids.push(p)
@@ -248,6 +257,9 @@ export class AsteroidsScene implements Scene {
 
     this.asteroids.filter(a => !a.view.visible).forEach(a => a.view.destroy())
     this.asteroids = this.asteroids.filter(a => a.view.visible)
+
+    this.particles.filter(p => p.dead).forEach(p => p.view.destroy())
+    this.particles = this.particles.filter(p => !p.dead)
   }
 
   private endGame() {
