@@ -92,6 +92,25 @@ class RetroAudioClass {
     this.thrustGain = null
   }
 
+  // Ascending 4-note chime on power-up collect
+  collect() {
+    const ctx   = this.getCtx()
+    const freqs = [440, 554, 659, 880]
+    freqs.forEach((freq, i) => {
+      const osc  = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.type = 'square'
+      osc.frequency.value = freq
+      const t = ctx.currentTime + i * 0.055
+      gain.gain.setValueAtTime(0.13, t)
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.09)
+      osc.start(t)
+      osc.stop(t + 0.09)
+    })
+  }
+
   // Two-tone blip warning when UFO appears
   ufoAlert() {
     const ctx = this.getCtx()

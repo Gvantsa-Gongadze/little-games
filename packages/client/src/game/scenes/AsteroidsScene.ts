@@ -3,8 +3,9 @@ import type { Scene } from '../SceneManager'
 import { Ship }              from '../entities/Ship'
 import { Bullet }            from '../entities/Bullet'
 import { Asteroid }          from '../entities/Asteroid'
-import { UFO, UFO_SCORE }    from '../entities/UFO'
-import { Particle, explode } from '../entities/Particle'
+import { UFO, UFO_SCORE }              from '../entities/UFO'
+import { PowerUp, DROP_CHANCE, randomType } from '../entities/PowerUp'
+import { Particle, explode }           from '../entities/Particle'
 import { RetroAudio }        from '../audio/RetroAudio'
 import { wrap, circlesOverlap, randomEdgePosition } from '../utils/math'
 
@@ -23,9 +24,12 @@ export class AsteroidsScene implements Scene {
   private bullets:     Bullet[]   = []
   private asteroids:   Asteroid[] = []
   private particles:   Particle[] = []
-  private ufoBullets:  Bullet[]   = []
-  private ufo:         UFO | null = null
-  private ufoTimer     = 1800     // ~30 s at 60 fps
+  private ufoBullets:      Bullet[]    = []
+  private ufo:             UFO | null  = null
+  private ufoTimer         = 1800
+  private powerUps:        PowerUp[]   = []
+  private tripleShotTimer  = 0   // frames remaining
+  private shieldTimer      = 0   // frames remaining
   private keys       = new Set<string>()
   private score      = 0
   private lives      = 3
@@ -36,11 +40,12 @@ export class AsteroidsScene implements Scene {
   private gameOver   = false
   private onGameOver?: (score: number) => void
 
-  private scoreText: Text
-  private livesText: Text
-  private waveText:  Text
-  private msgText:   Text
+  private scoreText:   Text
+  private livesText:   Text
+  private waveText:    Text
+  private msgText:     Text
   private waveAnnounce: Text
+  private powerupText: Text
 
   constructor(onGameOver?: (score: number) => void) {
     this.onGameOver = onGameOver
@@ -87,13 +92,21 @@ export class AsteroidsScene implements Scene {
     this.msgText.anchor.set(0.5)
     this.msgText.position.set(W() / 2, H() / 2)
 
+    // power-up status bottom-center
+    this.powerupText = new Text({
+      text: '',
+      style: { fill: '#00ffff', fontSize: 9, fontFamily: FONT, align: 'center' },
+    })
+    this.powerupText.anchor.set(0.5, 1)
+    this.powerupText.position.set(W() / 2, H() - 16)
+
     this.ship = new Ship()
     this.ship.reset(W() / 2, H() / 2)
 
     this.view.addChild(
       this.ship.view,
       this.scoreText, this.livesText, this.waveText,
-      this.waveAnnounce, this.msgText,
+      this.waveAnnounce, this.msgText, this.powerupText,
     )
 
     this.spawnWave()
@@ -159,12 +172,26 @@ export class AsteroidsScene implements Scene {
     if (!thrusting && this.wasThrusting)  RetroAudio.stopThrust()
     this.wasThrusting = thrusting
 
+    // power-up timers
+    if (this.tripleShotTimer > 0) {
+      this.tripleShotTimer -= delta
+      if (this.tripleShotTimer <= 0) this.updatePowerupHUD()
+    }
+    if (this.shieldTimer > 0) {
+      this.shieldTimer -= delta
+      if (this.shieldTimer <= 0) { this.ship.setShield(false); this.updatePowerupHUD() }
+    }
+
     this.fireTimer -= delta
     if (this.keys.has('Space') && this.fireTimer <= 0) {
       this.fireTimer = FIRE_COOLDOWN
-      const b = new Bullet(this.ship.x, this.ship.y, this.ship.view.rotation)
-      this.bullets.push(b)
-      this.view.addChild(b.view)
+      const angle   = this.ship.view.rotation
+      const offsets = this.tripleShotTimer > 0 ? [-0.26, 0, 0.26] : [0]
+      for (const off of offsets) {
+        const b = new Bullet(this.ship.x, this.ship.y, angle + off)
+        this.bullets.push(b)
+        this.view.addChild(b.view)
+      }
       RetroAudio.shoot()
     }
 
@@ -183,6 +210,7 @@ export class AsteroidsScene implements Scene {
     for (const a of this.asteroids) { a.update(delta); wrap(a, W(), H()) }
     for (const p of this.particles)   p.update(delta)
     for (const b of this.ufoBullets) { b.update(delta); wrap(b, W(), H()) }
+    for (const p of this.powerUps)    p.update(delta)
 
     // UFO spawn countdown
     if (!this.ufo) {
@@ -207,6 +235,7 @@ export class AsteroidsScene implements Scene {
     this.checkBulletCollisions()
     this.checkShipCollisions()
     this.checkUFOCollisions()
+    this.checkPowerUpCollisions()
     this.cleanup()
 
     if (this.asteroids.length === 0) this.spawnWave()
@@ -239,7 +268,7 @@ export class AsteroidsScene implements Scene {
     }
 
     // UFO bullets → ship
-    if (!this.ship.invincible) {
+    if (!this.ship.invincible && this.shieldTimer <= 0) {
       for (const b of this.ufoBullets) {
         if (circlesOverlap(b.x, b.y, b.radius, this.ship.x, this.ship.y, this.ship.radius)) {
           b.life = 0
@@ -253,6 +282,32 @@ export class AsteroidsScene implements Scene {
         }
       }
     }
+  }
+
+  private checkPowerUpCollisions() {
+    for (const pu of this.powerUps) {
+      if (!circlesOverlap(this.ship.x, this.ship.y, this.ship.radius, pu.x, pu.y, pu.radius)) continue
+      pu.lifetime = 0   // mark for cleanup
+      RetroAudio.collect()
+
+      if (pu.type === 'tripleShot') {
+        this.tripleShotTimer = 480
+      } else if (pu.type === 'shield') {
+        this.shieldTimer = 300
+        this.ship.setShield(true)
+      } else {
+        this.lives = Math.min(this.lives + 1, 5)
+        this.livesText.text = `LIVES  ${'♥ '.repeat(this.lives).trim()}`
+      }
+      this.updatePowerupHUD()
+    }
+  }
+
+  private updatePowerupHUD() {
+    const parts: string[] = []
+    if (this.tripleShotTimer > 0) parts.push('» 3-SHOT «')
+    if (this.shieldTimer      > 0) parts.push('» SHIELD «')
+    this.powerupText.text = parts.join('   ')
   }
 
   private checkAsteroidCollisions() {
@@ -320,6 +375,13 @@ export class AsteroidsScene implements Scene {
             this.asteroids.push(p)
             this.view.addChild(p.view)
           }
+
+          // maybe drop a power-up
+          if (Math.random() < (DROP_CHANCE[a.size] ?? 0)) {
+            const pu = new PowerUp(randomType(), a.x, a.y)
+            this.powerUps.push(pu)
+            this.view.addChild(pu.view)
+          }
           break
         }
       }
@@ -327,7 +389,7 @@ export class AsteroidsScene implements Scene {
   }
 
   private checkShipCollisions() {
-    if (this.ship.invincible) return
+    if (this.ship.invincible || this.shieldTimer > 0) return
     for (const a of this.asteroids) {
       if (!a.view.visible) continue
       if (circlesOverlap(this.ship.x, this.ship.y, this.ship.radius, a.x, a.y, a.radius)) {
@@ -355,6 +417,9 @@ export class AsteroidsScene implements Scene {
 
     this.ufoBullets.filter(b => b.dead).forEach(b => b.view.destroy())
     this.ufoBullets = this.ufoBullets.filter(b => !b.dead)
+
+    this.powerUps.filter(p => p.expired).forEach(p => p.view.destroy())
+    this.powerUps = this.powerUps.filter(p => !p.expired)
   }
 
   private endGame() {

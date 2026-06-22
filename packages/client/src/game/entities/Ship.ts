@@ -14,8 +14,9 @@ export class Ship {
   radius     = 14
   invincible = false
 
-  private hull:  Graphics
-  private flame: Graphics
+  private hull:   Graphics
+  private flame:  Graphics
+  private shield: Graphics
 
   constructor() {
     this.hull = new Graphics()
@@ -32,8 +33,17 @@ export class Ship {
       .lineTo(6, 10)
       .stroke({ color: 0xffff00, width: 2 })
 
-    this.flame.visible = false
-    this.view.addChild(this.hull, this.flame)
+    this.shield = new Graphics()
+      .circle(0, 0, 26)
+      .stroke({ color: 0x4499ff, width: 2 })
+
+    this.flame.visible  = false
+    this.shield.visible = false
+    this.view.addChild(this.hull, this.flame, this.shield)
+  }
+
+  setShield(active: boolean) {
+    this.shield.visible = active
   }
 
   update(delta: number, keys: Set<string>) {
@@ -62,9 +72,12 @@ export class Ship {
     this.view.x = this.x
     this.view.y = this.y
 
-    // blink when invincible
+    // blink when invincible (respawn); shield handles its own alpha
     if (this.invincible) this.view.alpha = Math.sin(Date.now() / 80) > 0 ? 1 : 0.2
     else this.view.alpha = 1
+
+    if (this.shield.visible)
+      this.shield.alpha = 0.5 + Math.sin(Date.now() / 120) * 0.35
   }
 
   reset(x: number, y: number) {
