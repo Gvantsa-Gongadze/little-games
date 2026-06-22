@@ -12,8 +12,9 @@ import { wrap, circlesOverlap, randomEdgePosition } from '../utils/math'
 const W = () => window.innerWidth
 const H = () => window.innerHeight
 
-const SCORE_MAP   = { large: 20, medium: 50, small: 100 }
+const SCORE_MAP     = { large: 20, medium: 50, small: 100 }
 const FIRE_COOLDOWN = 12
+const COMBO_WINDOW  = 90   // frames ≈ 1.5 s at 60 fps
 const GREEN = '#33ff66'
 const FONT  = '"Press Start 2P", monospace'
 
@@ -37,15 +38,18 @@ export class AsteroidsScene implements Scene {
   private fireTimer    = 0
   private shake        = 0
   private wasThrusting = false
-  private gameOver   = false
+  private gameOver     = false
+  private comboMult    = 1   // 1 | 2 | 3
+  private comboTimer   = 0   // frames remaining in combo window
   private onGameOver?: (score: number) => void
 
-  private scoreText:   Text
-  private livesText:   Text
-  private waveText:    Text
-  private msgText:     Text
+  private scoreText:    Text
+  private livesText:    Text
+  private waveText:     Text
+  private msgText:      Text
   private waveAnnounce: Text
-  private powerupText: Text
+  private powerupText:  Text
+  private comboText:    Text
 
   constructor(onGameOver?: (score: number) => void) {
     this.onGameOver = onGameOver
@@ -100,6 +104,15 @@ export class AsteroidsScene implements Scene {
     this.powerupText.anchor.set(0.5, 1)
     this.powerupText.position.set(W() / 2, H() - 16)
 
+    // combo multiplier — shown below score when a chain is active
+    this.comboText = new Text({
+      text: '',
+      style: { fill: '#ffdd00', fontSize: 10, fontFamily: FONT, align: 'center' },
+    })
+    this.comboText.anchor.set(0.5, 0)
+    this.comboText.position.set(W() / 2, 62)
+    this.comboText.alpha = 0
+
     this.ship = new Ship()
     this.ship.reset(W() / 2, H() / 2)
 
@@ -107,6 +120,7 @@ export class AsteroidsScene implements Scene {
       this.ship.view,
       this.scoreText, this.livesText, this.waveText,
       this.waveAnnounce, this.msgText, this.powerupText,
+      this.comboText,
     )
 
     this.spawnWave()
@@ -187,6 +201,17 @@ export class AsteroidsScene implements Scene {
       if (this.shieldTimer <= 0) { this.ship.setShield(false); this.updatePowerupHUD() }
     }
 
+    // combo window countdown — fade out in the last 30 frames as a "hurry" cue
+    if (this.comboTimer > 0) {
+      this.comboTimer -= delta
+      if (this.comboTimer <= 0) {
+        this.comboMult  = 1
+        this.comboText.alpha = 0
+      } else {
+        this.comboText.alpha = this.comboTimer < 30 ? this.comboTimer / 30 : 1
+      }
+    }
+
     this.fireTimer -= delta
     if (this.keys.has('Space') && this.fireTimer <= 0) {
       this.fireTimer = FIRE_COOLDOWN
@@ -260,8 +285,7 @@ export class AsteroidsScene implements Scene {
     for (const b of this.bullets) {
       if (circlesOverlap(b.x, b.y, b.radius, this.ufo.x, this.ufo.y, this.ufo.radius)) {
         b.life = 0
-        this.score += UFO_SCORE[this.ufo.size]
-        this.scoreText.text = `SCORE\n${String(this.score).padStart(5, '0')}`
+        this.registerKill(UFO_SCORE[this.ufo.size])
         RetroAudio.explode('medium')
         const frags = explode(this.ufo.x, this.ufo.y, 0, 0, 'medium')
         for (const p of frags) { this.particles.push(p); this.view.addChild(p.view) }
@@ -315,6 +339,18 @@ export class AsteroidsScene implements Scene {
     this.powerupText.text = parts.join('   ')
   }
 
+  private registerKill(baseScore: number) {
+    if (this.comboTimer > 0) this.comboMult = Math.min(this.comboMult + 1, 3)
+    this.comboTimer = COMBO_WINDOW
+    this.score += baseScore * this.comboMult
+    this.scoreText.text = `SCORE\n${String(this.score).padStart(5, '0')}`
+    if (this.comboMult > 1) {
+      this.comboText.text  = `${this.comboMult}× COMBO`
+      this.comboText.style.fill = this.comboMult === 3 ? '#ff6622' : '#ffdd00'
+      this.comboText.alpha = 1
+    }
+  }
+
   private checkAsteroidCollisions() {
     for (let i = 0; i < this.asteroids.length; i++) {
       for (let j = i + 1; j < this.asteroids.length; j++) {
@@ -365,8 +401,7 @@ export class AsteroidsScene implements Scene {
           b.life = 0
           a.view.visible = false
 
-          this.score += SCORE_MAP[a.size]
-          this.scoreText.text = `SCORE\n${String(this.score).padStart(5, '0')}`
+          this.registerKill(SCORE_MAP[a.size])
 
           RetroAudio.explode(a.size)
           const frags = explode(a.x, a.y, a.vx, a.vy, a.size)
