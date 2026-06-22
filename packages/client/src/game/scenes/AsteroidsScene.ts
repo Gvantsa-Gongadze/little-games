@@ -4,6 +4,7 @@ import { Ship }              from '../entities/Ship'
 import { Bullet }            from '../entities/Bullet'
 import { Asteroid }          from '../entities/Asteroid'
 import { Particle, explode } from '../entities/Particle'
+import { RetroAudio }        from '../audio/RetroAudio'
 import { wrap, circlesOverlap, randomEdgePosition } from '../utils/math'
 
 const W = () => window.innerWidth
@@ -25,8 +26,9 @@ export class AsteroidsScene implements Scene {
   private score      = 0
   private lives      = 3
   private wave       = 0
-  private fireTimer  = 0
-  private shake      = 0
+  private fireTimer    = 0
+  private shake        = 0
+  private wasThrusting = false
   private gameOver   = false
   private onGameOver?: (score: number) => void
 
@@ -147,12 +149,19 @@ export class AsteroidsScene implements Scene {
     this.ship.update(delta, this.keys)
     wrap(this.ship, W(), H())
 
+    // thrust sound
+    const thrusting = this.keys.has('ArrowUp')
+    if (thrusting && !this.wasThrusting) RetroAudio.startThrust()
+    if (!thrusting && this.wasThrusting)  RetroAudio.stopThrust()
+    this.wasThrusting = thrusting
+
     this.fireTimer -= delta
     if (this.keys.has('Space') && this.fireTimer <= 0) {
       this.fireTimer = FIRE_COOLDOWN
       const b = new Bullet(this.ship.x, this.ship.y, this.ship.view.rotation)
       this.bullets.push(b)
       this.view.addChild(b.view)
+      RetroAudio.shoot()
     }
 
     // screen shake
@@ -231,6 +240,7 @@ export class AsteroidsScene implements Scene {
           this.score += SCORE_MAP[a.size]
           this.scoreText.text = `SCORE\n${String(this.score).padStart(5, '0')}`
 
+          RetroAudio.explode(a.size)
           const frags = explode(a.x, a.y, a.vx, a.vy, a.size)
           for (const p of frags) {
             this.particles.push(p)
@@ -257,6 +267,7 @@ export class AsteroidsScene implements Scene {
         this.livesText.text = `LIVES  ${'♥ '.repeat(this.lives).trim() || '—'}`
 
         this.shake = 10
+        RetroAudio.die()
         if (this.lives <= 0) this.endGame()
         else                 this.ship.reset(W() / 2, H() / 2)
         break
@@ -291,6 +302,7 @@ export class AsteroidsScene implements Scene {
 
   destroy() {
     this._removeInput()
+    RetroAudio.stopThrust()
     this.view.destroy({ children: true })
   }
 }
