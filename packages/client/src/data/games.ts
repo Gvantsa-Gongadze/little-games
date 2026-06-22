@@ -27,4 +27,13 @@ export const GAMES: GameMeta[] = [
     accent: '#a78bfa',
     emoji: '🟪',
   },
+  {
+    id: 'asteroids',
+    title: 'Asteroids',
+    description: 'Shoot rocks, survive the waves.',
+    route: '/asteroids',
+    tag: '2D',
+    accent: '#facc15',
+    emoji: '🪨',
+  },
 ]
