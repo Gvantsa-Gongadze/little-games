@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Application } from 'pixi.js'
 import { SceneManager } from '@/game/SceneManager'
 import { MenuScene } from '@/game/scenes/MenuScene'
@@ -11,6 +11,8 @@ interface Props {
 
 export default function PixiCanvas({ onGameOver }: Props) {
   const mountRef = useRef<HTMLDivElement>(null)
+  const onGameOverRef = useRef(onGameOver)
+  useLayoutEffect(() => { onGameOverRef.current = onGameOver })
   const [ready, setReady] = useState(false)
   const [initError, setInitError] = useState<Error | null>(null)
 
@@ -43,7 +45,7 @@ export default function PixiCanvas({ onGameOver }: Props) {
       manager = new SceneManager(app)
 
       const menu = new MenuScene(() => {
-        manager.switch(new GameScene(onGameOver))
+        manager.switch(new GameScene(onGameOverRef.current))
       })
 
       manager.switch(menu)
