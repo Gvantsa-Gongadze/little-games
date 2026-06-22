@@ -60,7 +60,6 @@ export default function ThreeCanvas() {
     }
   }, [webGLError])
 
-  // All hooks above — safe to throw now
   if (webGLError) throw webGLError
 
   return <div ref={mountRef} style={{ width: '100vw', height: '100vh' }} />

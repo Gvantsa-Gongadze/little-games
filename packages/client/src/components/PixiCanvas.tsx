@@ -29,7 +29,6 @@ export default function PixiCanvas({ onGameOver }: Props) {
           resizeTo: window,
         })
       } catch (e) {
-        // async — runs after await, not synchronously in the effect body
         setInitError(e instanceof Error ? e : new Error('Pixi.js failed to initialise'))
         return
       }
@@ -50,7 +49,6 @@ export default function PixiCanvas({ onGameOver }: Props) {
       manager.switch(menu)
 
       app.ticker.add(ticker => manager.update(ticker.deltaTime))
-      // async — runs after await, not synchronously in the effect body
       setReady(true)
     }
 
@@ -64,7 +62,6 @@ export default function PixiCanvas({ onGameOver }: Props) {
     }
   }, [])
 
-  // All hooks above — safe to throw now
   if (initError) throw initError
 
   return (
