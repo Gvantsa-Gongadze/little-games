@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react'
 import { Room } from 'colyseus.js'
-import { joinGameRoom } from '@/game/ColyseusClient'
+import { joinGameRoom } from '@/engine/ColyseusClient'
 import { submitScore } from '@/lib/scores'
 import { supabase } from '@/lib/supabase'
-import PixiCanvas from '@/components/PixiCanvas'
+import PixiCanvas from '@/games/arena-2d/PixiCanvas'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 
 export default function Game() {

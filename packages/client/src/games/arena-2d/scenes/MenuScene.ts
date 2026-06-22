@@ -1,5 +1,5 @@
 import { Container, Text } from 'pixi.js'
-import type { Scene } from '../SceneManager'
+import type { Scene } from '@/engine/SceneManager'
 
 export class MenuScene implements Scene {
   readonly view = new Container()

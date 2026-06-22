@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import AsteroidsCanvas from '@/components/AsteroidsCanvas'
+import AsteroidsCanvas from '@/games/asteroids/AsteroidsCanvas'
 import { supabase }     from '@/lib/supabase'
 import { submitScore }  from '@/lib/scores'
 

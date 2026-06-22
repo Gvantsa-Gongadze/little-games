@@ -1,5 +1,5 @@
 import { Container, Graphics, Text } from 'pixi.js'
-import type { Scene } from '../SceneManager'
+import type { Scene } from '@/engine/SceneManager'
 import { Ship }              from '../entities/Ship'
 import { Bullet }            from '../entities/Bullet'
 import { Asteroid }          from '../entities/Asteroid'

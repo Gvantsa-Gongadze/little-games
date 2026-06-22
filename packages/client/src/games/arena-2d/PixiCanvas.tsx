@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Application } from 'pixi.js'
-import { SceneManager } from '@/game/SceneManager'
-import { MenuScene } from '@/game/scenes/MenuScene'
-import { GameScene } from '@/game/scenes/GameScene'
-import LoadingSpinner from './LoadingSpinner'
+import { SceneManager } from '@/engine/SceneManager'
+import { MenuScene } from './scenes/MenuScene'
+import { GameScene } from './scenes/GameScene'
+import LoadingSpinner from '@/components/LoadingSpinner'
 
 interface Props {
   onGameOver?: (score: number) => void

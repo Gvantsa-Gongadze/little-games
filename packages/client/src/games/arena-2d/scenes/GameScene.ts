@@ -1,6 +1,6 @@
 import { Container, Graphics } from 'pixi.js'
-import { Keyboard } from '../input/Keyboard'
-import type { Scene } from '../SceneManager'
+import { Keyboard } from '@/engine/input/Keyboard'
+import type { Scene } from '@/engine/SceneManager'
 
 const SPEED = 4
 

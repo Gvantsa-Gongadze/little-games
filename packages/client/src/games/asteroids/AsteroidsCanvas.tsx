@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Application }          from 'pixi.js'
-import { SceneManager }         from '@/game/SceneManager'
-import { AsteroidsScene }       from '@/game/scenes/AsteroidsScene'
+import { SceneManager }         from '@/engine/SceneManager'
+import { AsteroidsScene }       from './scenes/AsteroidsScene'
 import { LeaderboardOverlay }   from './LeaderboardOverlay'
 import { TouchControls }        from './TouchControls'
 
