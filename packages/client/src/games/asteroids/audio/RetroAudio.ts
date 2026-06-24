@@ -1,3 +1,4 @@
+import { gsap } from 'gsap'
 import type { AsteroidSize } from '../entities/Asteroid'
 
 class RetroAudioClass {
@@ -93,7 +94,7 @@ class RetroAudioClass {
     if (!ctx) { try { this.thrustNode.stop() } catch { /* ignore */ } this.thrustNode = null; this.thrustGain = null; return }
     const node = this.thrustNode
     this.thrustGain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.08)
-    setTimeout(() => { try { node.stop() } catch { /* already stopped */ } }, 100)
+    gsap.delayedCall(0.1, () => { try { node.stop() } catch { /* already stopped */ } })
     this.thrustNode = null
     this.thrustGain = null
   }

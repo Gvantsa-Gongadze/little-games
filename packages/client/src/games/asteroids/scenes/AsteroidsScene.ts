@@ -9,6 +9,7 @@ import { Planet }                           from '../entities/Planet'
 import { Particle, explode }           from '../entities/Particle'
 import { RetroAudio }        from '../audio/RetroAudio'
 import { wrap, circlesOverlap, randomEdgePosition } from '../utils/math'
+import { gsap } from 'gsap'
 import T from '@/data/strings.json'
 
 const W = () => window.innerWidth
@@ -48,6 +49,8 @@ export class AsteroidsScene implements Scene {
   private inHyperspace    = false
   private betweenWaves    = false
   private waveDelay       = 0
+  private hyperspaceCall: gsap.core.Tween | null = null
+  private endGameCall:    gsap.core.Tween | null = null
   private onGameOver?: (score: number) => void
 
   private scoreText:      Text
@@ -188,7 +191,7 @@ export class AsteroidsScene implements Scene {
       this.waveAnnounce.alpha = Math.max(0, 1 - t)
       if (this.waveAnnounce.alpha > 0) requestAnimationFrame(fade)
     }
-    setTimeout(() => requestAnimationFrame(fade), 800)
+    gsap.delayedCall(0.8, () => requestAnimationFrame(fade))
   }
 
   private spawnAsteroids() {
@@ -407,7 +410,7 @@ export class AsteroidsScene implements Scene {
     RetroAudio.hyperspaceIn()
     this.updateHyperspaceHUD()
 
-    setTimeout(() => {
+    this.hyperspaceCall = gsap.delayedCall(0.3, () => {
       if (this.gameOver) { this.inHyperspace = false; return }
 
       const MARGIN = 80
@@ -436,11 +439,11 @@ export class AsteroidsScene implements Scene {
         this.ship.view.rotation  = 0
         this.ship.view.visible   = true
         this.ship.invincible     = true
-        setTimeout(() => { this.ship.invincible = false }, 1500)
+        gsap.delayedCall(1.5, () => { this.ship.invincible = false })
         RetroAudio.hyperspaceOut()
       }
       this.updateHyperspaceHUD()
-    }, 300)
+    })
   }
 
   private updateHyperspaceHUD() {
@@ -655,12 +658,14 @@ export class AsteroidsScene implements Scene {
     this.msgText.text      = T.common.gameOver
 
     // brief pause so the player sees what killed them, then hand off to React
-    setTimeout(() => this.onGameOver?.(this.score), 600)
+    this.endGameCall = gsap.delayedCall(0.6, () => this.onGameOver?.(this.score))
   }
 
   destroy() {
     this._removeInput()
     RetroAudio.stopThrust()
+    this.hyperspaceCall?.kill()
+    this.endGameCall?.kill()
     if (this.ufo) { this.ufo.view.destroy(); this.ufo = null }
     this.view.destroy({ children: true })
   }

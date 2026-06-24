@@ -1,4 +1,5 @@
 import { Container, Graphics } from 'pixi.js'
+import { gsap } from 'gsap'
 
 const ROT_SPEED  = 0.065
 const THRUST     = 0.25
@@ -85,6 +86,6 @@ export class Ship {
     this.vx = 0; this.vy = 0
     this.view.rotation = 0
     this.invincible = true
-    setTimeout(() => { this.invincible = false }, 2500)
+    gsap.delayedCall(2.5, () => { this.invincible = false })
   }
 }
