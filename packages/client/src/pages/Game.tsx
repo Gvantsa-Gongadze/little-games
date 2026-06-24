@@ -21,7 +21,8 @@ export default function Game() {
   async function handleGameOver(score: number) {
     const { data } = await supabase.auth.getUser()
     if (data.user) {
-      await submitScore('2d-game', score, data.user.id)
+      const username = data.user.user_metadata?.username ?? null
+      await submitScore('2d-game', score, data.user.id, username)
     }
   }
 

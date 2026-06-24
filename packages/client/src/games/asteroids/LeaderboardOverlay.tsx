@@ -3,7 +3,7 @@ import { supabase }        from '@/lib/supabase'
 import T from '@/data/strings.json'
 import { getLeaderboard }  from '@/lib/scores'
 
-type Entry = { score: number; user_id: string; created_at: string }
+type Entry = { score: number; user_id: string; username: string | null; created_at: string }
 
 interface Props {
   score:     number
@@ -26,6 +26,8 @@ export function LeaderboardOverlay({ score, onRestart }: Props) {
       .then(data => { setEntries(data ?? []); setLoading(false) })
       .catch(() => setLoading(false))
   }, [])
+
+  const displayName = (e: Entry) => e.username || '???'
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.code === 'KeyR') onRestart() }
@@ -88,8 +90,8 @@ export function LeaderboardOverlay({ score, onRestart }: Props) {
                     <td style={{ fontSize: 13, padding: '4px 8px', letterSpacing: 2, textAlign: 'right' }}>
                       {String(e.score).padStart(6, '0')}
                     </td>
-                    <td style={{ fontSize: 9, padding: '4px 0', letterSpacing: 2, textAlign: 'left', width: 60 }}>
-                      {isYou ? T.leaderboard.youMarker : ''}
+                    <td style={{ fontSize: 9, padding: '4px 0 4px 8px', letterSpacing: 1, textAlign: 'left' }}>
+                      {displayName(e)}{isYou ? ' ◄' : ''}
                     </td>
                   </tr>
                 )

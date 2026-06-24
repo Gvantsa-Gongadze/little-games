@@ -3,15 +3,18 @@ import type { AsteroidSize } from '../entities/Asteroid'
 class RetroAudioClass {
   private ctx: AudioContext | null = null
 
-  private getCtx(): AudioContext {
+  // Returns null when the context isn't running yet (browser autoplay policy).
+  // Calling resume() here queues the unlock so the next gesture resolves it.
+  private getCtx(): AudioContext | null {
     if (!this.ctx) this.ctx = new AudioContext()
     if (this.ctx.state === 'suspended') this.ctx.resume()
-    return this.ctx
+    return this.ctx.state === 'running' ? this.ctx : null
   }
 
   // Short descending square blip
   shoot() {
     const ctx  = this.getCtx()
+    if (!ctx) return
     const osc  = ctx.createOscillator()
     const gain = ctx.createGain()
     osc.connect(gain)
@@ -28,6 +31,7 @@ class RetroAudioClass {
   // White-noise burst scaled to asteroid size
   explode(size: AsteroidSize) {
     const ctx      = this.getCtx()
+    if (!ctx) return
     const duration = size === 'large' ? 0.55 : size === 'medium' ? 0.35 : 0.2
     const volume   = size === 'large' ? 0.7  : size === 'medium' ? 0.45 : 0.28
 
@@ -55,6 +59,7 @@ class RetroAudioClass {
   startThrust() {
     if (this.thrustNode) return
     const ctx = this.getCtx()
+    if (!ctx) return
 
     const samples = ctx.sampleRate * 2
     const buffer  = ctx.createBuffer(1, samples, ctx.sampleRate)
@@ -85,6 +90,7 @@ class RetroAudioClass {
   stopThrust() {
     if (!this.thrustNode || !this.thrustGain) return
     const ctx  = this.getCtx()
+    if (!ctx) { try { this.thrustNode.stop() } catch { /* ignore */ } this.thrustNode = null; this.thrustGain = null; return }
     const node = this.thrustNode
     this.thrustGain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.08)
     setTimeout(() => { try { node.stop() } catch { /* already stopped */ } }, 100)
@@ -95,6 +101,7 @@ class RetroAudioClass {
   // Ascending 4-note chime on power-up collect
   collect() {
     const ctx   = this.getCtx()
+    if (!ctx) return
     const freqs = [440, 554, 659, 880]
     freqs.forEach((freq, i) => {
       const osc  = ctx.createOscillator()
@@ -114,6 +121,7 @@ class RetroAudioClass {
   // Two-tone blip warning when UFO appears
   ufoAlert() {
     const ctx = this.getCtx()
+    if (!ctx) return
     const freqs = [330, 550]
     freqs.forEach((freq, i) => {
       const osc  = ctx.createOscillator()
@@ -133,6 +141,7 @@ class RetroAudioClass {
   // Hyperspace departure — rapid descending square sweep
   hyperspaceIn() {
     const ctx  = this.getCtx()
+    if (!ctx) return
     const osc  = ctx.createOscillator()
     const gain = ctx.createGain()
     osc.connect(gain); gain.connect(ctx.destination)
@@ -148,6 +157,7 @@ class RetroAudioClass {
   // Hyperspace arrival — rapid ascending square sweep
   hyperspaceOut() {
     const ctx  = this.getCtx()
+    if (!ctx) return
     const osc  = ctx.createOscillator()
     const gain = ctx.createGain()
     osc.connect(gain); gain.connect(ctx.destination)
@@ -163,6 +173,7 @@ class RetroAudioClass {
   // Descending sawtooth sweep on death
   die() {
     const ctx  = this.getCtx()
+    if (!ctx) return
     const osc  = ctx.createOscillator()
     const gain = ctx.createGain()
     osc.connect(gain)

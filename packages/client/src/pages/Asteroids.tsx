@@ -10,7 +10,10 @@ export default function AsteroidsPage() {
 
   async function handleGameOver(score: number) {
     const { data } = await supabase.auth.getUser()
-    if (data.user) await submitScore('asteroids', score, data.user.id)
+    if (data.user) {
+      const username = data.user.user_metadata?.username ?? null
+      await submitScore('asteroids', score, data.user.id, username)
+    }
   }
 
   useEffect(() => {

@@ -10,6 +10,7 @@ export default function Home() {
   const { user, loading } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [username, setUsername] = useState('')
   const [message, setMessage] = useState('')
 
   if (loading) return <LoadingSpinner />
@@ -20,7 +21,11 @@ export default function Home() {
   }
 
   async function signUp() {
-    const { error } = await supabase.auth.signUp({ email, password })
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { username: username.trim() || email.split('@')[0] } },
+    })
     if (error) setMessage(error.message)
     else setMessage(T.home.confirmEmail)
   }
@@ -31,7 +36,7 @@ export default function Home() {
         <header style={header}>
           <h1 style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.5px' }}>{T.home.title}</h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ color: '#666', fontSize: 13 }}>{user.email}</span>
+            <span style={{ color: '#666', fontSize: 13 }}>{user.user_metadata?.username || user.email}</span>
             <button onClick={() => supabase.auth.signOut()} style={signOutBtn}>{T.home.signOut}</button>
           </div>
         </header>
@@ -54,6 +59,14 @@ export default function Home() {
         style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, width: 240 }}
         onSubmit={e => e.preventDefault()}
       >
+        <input
+          placeholder={T.home.usernamePlaceholder}
+          type="text"
+          autoComplete="username"
+          value={username}
+          onChange={e => setUsername(e.target.value)}
+          style={input}
+        />
         <input
           placeholder={T.home.emailPlaceholder}
           type="email"

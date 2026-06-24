@@ -27,6 +27,7 @@
     "title": "Little Games",
     "tagline": "Pick a game and play",
     "signInTagline": "Sign in to play",
+    "usernamePlaceholder": "Username",
     "emailPlaceholder": "Email",
     "passwordPlaceholder": "Password",
     "confirmEmail": "Check your email to confirm your account.",
