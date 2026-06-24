@@ -7,7 +7,7 @@ export function BackButton() {
   const navigate = useNavigate()
   return (
     <button
-      onClick={() => navigate('/')}
+      onClick={() => navigate('/lobby')}
       style={{
         position: 'absolute',
         top: 16,

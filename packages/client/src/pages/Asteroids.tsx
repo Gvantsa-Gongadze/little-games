@@ -15,7 +15,7 @@ export default function AsteroidsPage() {
 
   useEffect(() => {
     const back = (e: KeyboardEvent) => {
-      if (e.code === 'Escape') navigate('/')
+      if (e.code === 'Escape') navigate('/lobby')
     }
     window.addEventListener('keydown', back)
     return () => window.removeEventListener('keydown', back)
