@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { GAMES } from '@/data/games'
+import T from '@/data/strings.json'
 import GameCard from '@/components/GameCard'
 import LoadingSpinner from '@/components/LoadingSpinner'
 
@@ -21,22 +22,22 @@ export default function Home() {
   async function signUp() {
     const { error } = await supabase.auth.signUp({ email, password })
     if (error) setMessage(error.message)
-    else setMessage('Check your email to confirm your account.')
+    else setMessage(T.home.confirmEmail)
   }
 
   if (user) {
     return (
       <div style={page}>
         <header style={header}>
-          <h1 style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.5px' }}>Little Games</h1>
+          <h1 style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.5px' }}>{T.home.title}</h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <span style={{ color: '#666', fontSize: 13 }}>{user.email}</span>
-            <button onClick={() => supabase.auth.signOut()} style={signOutBtn}>Sign out</button>
+            <button onClick={() => supabase.auth.signOut()} style={signOutBtn}>{T.home.signOut}</button>
           </div>
         </header>
 
         <main>
-          <p style={{ color: '#555', marginBottom: 28, fontSize: 14 }}>Pick a game and play</p>
+          <p style={{ color: '#555', marginBottom: 28, fontSize: 14 }}>{T.home.tagline}</p>
           <div style={grid}>
             {GAMES.map(game => <GameCard key={game.id} game={game} />)}
           </div>
@@ -47,14 +48,14 @@ export default function Home() {
 
   return (
     <div style={authPage}>
-      <h1 style={{ fontSize: 32, fontWeight: 700, marginBottom: 8 }}>Little Games</h1>
-      <p style={{ color: '#555', marginBottom: 32, fontSize: 14 }}>Sign in to play</p>
+      <h1 style={{ fontSize: 32, fontWeight: 700, marginBottom: 8 }}>{T.home.title}</h1>
+      <p style={{ color: '#555', marginBottom: 32, fontSize: 14 }}>{T.home.signInTagline}</p>
       <form
         style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, width: 240 }}
         onSubmit={e => e.preventDefault()}
       >
         <input
-          placeholder="Email"
+          placeholder={T.home.emailPlaceholder}
           type="email"
           autoComplete="email"
           value={email}
@@ -62,7 +63,7 @@ export default function Home() {
           style={input}
         />
         <input
-          placeholder="Password"
+          placeholder={T.home.passwordPlaceholder}
           type="password"
           autoComplete="current-password"
           value={password}
@@ -74,8 +75,8 @@ export default function Home() {
             {message}
           </p>
         )}
-        <button type="submit" onClick={signIn} style={primaryBtn}>Sign in</button>
-        <button type="button" onClick={signUp} style={secondaryBtn}>Sign up</button>
+        <button type="submit" onClick={signIn} style={primaryBtn}>{T.home.signIn}</button>
+        <button type="button" onClick={signUp} style={secondaryBtn}>{T.home.signUp}</button>
       </form>
     </div>
   )

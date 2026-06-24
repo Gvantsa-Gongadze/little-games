@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom'
+import T from '@/data/strings.json'
 
 const FONT = '"Courier New", "Lucida Console", monospace'
 
@@ -33,7 +34,7 @@ export function BackButton() {
         e.currentTarget.style.boxShadow   = 'none'
       }}
     >
-      ◄ LOBBY
+      {T.nav.backToLobby}
     </button>
   )
 }

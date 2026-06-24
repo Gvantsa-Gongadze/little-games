@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase }        from '@/lib/supabase'
+import T from '@/data/strings.json'
 import { getLeaderboard }  from '@/lib/scores'
 
 type Entry = { score: number; user_id: string; created_at: string }
@@ -49,12 +50,12 @@ export function LeaderboardOverlay({ score, onRestart }: Props) {
       }}>
         {/* Title */}
         <div style={{ fontSize: 26, letterSpacing: 6, marginBottom: 6 }}>
-          GAME OVER
+          {T.common.gameOver}
         </div>
 
         {/* Player's score */}
         <div style={{ fontSize: 14, letterSpacing: 3, color: YELLOW, marginBottom: 24 }}>
-          SCORE &nbsp; {String(score).padStart(6, '0')}
+          {T.hud.scoreLabel} &nbsp; {String(score).padStart(6, '0')}
         </div>
 
         {/* Divider */}
@@ -62,17 +63,17 @@ export function LeaderboardOverlay({ score, onRestart }: Props) {
 
         {/* Leaderboard header */}
         <div style={{ fontSize: 11, letterSpacing: 4, marginBottom: 14, color: DIM }}>
-          TOP 10
+          {T.leaderboard.top10}
         </div>
 
         {/* Entries */}
         {loading ? (
           <div style={{ fontSize: 10, color: DIM, letterSpacing: 2, marginBottom: 24 }}>
-            LOADING...
+            {T.leaderboard.loading}
           </div>
         ) : entries.length === 0 ? (
           <div style={{ fontSize: 10, color: DIM, letterSpacing: 2, marginBottom: 24 }}>
-            NO SCORES YET
+            {T.leaderboard.noScores}
           </div>
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 24 }}>
@@ -88,7 +89,7 @@ export function LeaderboardOverlay({ score, onRestart }: Props) {
                       {String(e.score).padStart(6, '0')}
                     </td>
                     <td style={{ fontSize: 9, padding: '4px 0', letterSpacing: 2, textAlign: 'left', width: 60 }}>
-                      {isYou ? '« YOU »' : ''}
+                      {isYou ? T.leaderboard.youMarker : ''}
                     </td>
                   </tr>
                 )
@@ -118,11 +119,11 @@ export function LeaderboardOverlay({ score, onRestart }: Props) {
           onMouseEnter={e => (e.currentTarget.style.background = '#0a2e12')}
           onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
         >
-          PLAY AGAIN
+          {T.leaderboard.playAgain}
         </button>
 
         <div style={{ fontSize: 9, color: DIM, letterSpacing: 2, marginTop: 10 }}>
-          OR PRESS R
+          {T.leaderboard.restartHint}
         </div>
       </div>
     </div>

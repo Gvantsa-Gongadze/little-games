@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import T from '@/data/strings.json'
 
 const GREEN = '#33ff66'
 const FONT  = '"Courier New", "Lucida Console", monospace'
@@ -78,8 +79,8 @@ export function TouchControls() {
         display: 'flex', gap: 14,
         pointerEvents: 'auto',
       }}>
-        <Btn code="ArrowLeft"  label="◄" />
-        <Btn code="ArrowRight" label="►" />
+        <Btn code="ArrowLeft"  label={T.touch.left} />
+        <Btn code="ArrowRight" label={T.touch.right} />
       </div>
 
       {/* Right cluster — thrust / fire / hyperspace */}
@@ -89,10 +90,10 @@ export function TouchControls() {
         alignItems: 'center', gap: 14,
         pointerEvents: 'auto',
       }}>
-        <Btn code="ArrowUp"   label="▲" />
+        <Btn code="ArrowUp"   label={T.touch.thrust} />
         <div style={{ display: 'flex', gap: 14 }}>
-          <Btn code="Space"     label="●" />
-          <Btn code="ShiftLeft" label="HYP" style={{ fontSize: 11, letterSpacing: 1 }} />
+          <Btn code="Space"     label={T.touch.fire} />
+          <Btn code="ShiftLeft" label={T.touch.hyperspace} style={{ fontSize: 11, letterSpacing: 1 }} />
         </div>
       </div>
     </div>

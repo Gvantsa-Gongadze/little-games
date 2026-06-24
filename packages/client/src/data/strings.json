@@ -1,0 +1,47 @@
+{
+  "common": {
+    "gameOver": "GAME OVER"
+  },
+  "hud": {
+    "scoreLabel": "SCORE",
+    "livesLabel": "LIVES",
+    "waveLabel": "WAVE",
+    "hyperspaceReady": "[SHF] HYPR",
+    "hyperspaceCooling": "HYPR COOLING",
+    "tripleShot": "» 3-SHOT «",
+    "shield": "» SHIELD «",
+    "comboSuffix": "× COMBO"
+  },
+  "leaderboard": {
+    "top10": "TOP 10",
+    "loading": "LOADING...",
+    "noScores": "NO SCORES YET",
+    "youMarker": "« YOU »",
+    "playAgain": "PLAY AGAIN",
+    "restartHint": "OR PRESS R"
+  },
+  "nav": {
+    "backToLobby": "◄ LOBBY"
+  },
+  "home": {
+    "title": "Little Games",
+    "tagline": "Pick a game and play",
+    "signInTagline": "Sign in to play",
+    "emailPlaceholder": "Email",
+    "passwordPlaceholder": "Password",
+    "confirmEmail": "Check your email to confirm your account.",
+    "signIn": "Sign in",
+    "signUp": "Sign up",
+    "signOut": "Sign out"
+  },
+  "touch": {
+    "left": "◄",
+    "right": "►",
+    "thrust": "▲",
+    "fire": "●",
+    "hyperspace": "HYP"
+  },
+  "arena2d": {
+    "pressSpace": "Press SPACE to play"
+  }
+}

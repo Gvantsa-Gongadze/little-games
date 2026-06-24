@@ -1,12 +1,13 @@
 import { Container, Text } from 'pixi.js'
 import type { Scene } from '@/engine/SceneManager'
+import T from '@/data/strings.json'
 
 export class MenuScene implements Scene {
   readonly view = new Container()
 
   constructor(onStart: () => void) {
     const label = new Text({
-      text: 'Press SPACE to play',
+      text: T.arena2d.pressSpace,
       style: { fill: '#ffffff', fontSize: 24 },
     })
     label.anchor.set(0.5)

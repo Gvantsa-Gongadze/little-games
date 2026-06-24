@@ -9,6 +9,7 @@ import { Planet }                           from '../entities/Planet'
 import { Particle, explode }           from '../entities/Particle'
 import { RetroAudio }        from '../audio/RetroAudio'
 import { wrap, circlesOverlap, randomEdgePosition } from '../utils/math'
+import T from '@/data/strings.json'
 
 const W = () => window.innerWidth
 const H = () => window.innerHeight
@@ -64,7 +65,7 @@ export class AsteroidsScene implements Scene {
 
     // HUD — score top-center
     this.scoreText = new Text({
-      text: 'SCORE\n00000',
+      text: `${T.hud.scoreLabel}\n00000`,
       style: { fill: GREEN, fontSize: 12, fontFamily: FONT, align: 'center', lineHeight: 20 },
     })
     this.scoreText.anchor.set(0.5, 0)
@@ -72,14 +73,14 @@ export class AsteroidsScene implements Scene {
 
     // lives top-left
     this.livesText = new Text({
-      text: 'LIVES  ♥ ♥ ♥',
+      text: `${T.hud.livesLabel}  ♥ ♥ ♥`,
       style: { fill: GREEN, fontSize: 10, fontFamily: FONT },
     })
     this.livesText.position.set(130, 26)
 
     // wave top-right
     this.waveText = new Text({
-      text: 'WAVE  1',
+      text: `${T.hud.waveLabel}  1`,
       style: { fill: GREEN, fontSize: 10, fontFamily: FONT },
     })
     this.waveText.anchor.set(1, 0)
@@ -121,7 +122,7 @@ export class AsteroidsScene implements Scene {
 
     // hyperspace status — bottom-left
     this.hyperspaceText = new Text({
-      text: '[SHF] HYPR',
+      text: T.hud.hyperspaceReady,
       style: { fill: GREEN, fontSize: 8, fontFamily: FONT },
     })
     this.hyperspaceText.anchor.set(0, 1)
@@ -174,9 +175,9 @@ export class AsteroidsScene implements Scene {
 
   private spawnWave() {
     this.wave++
-    this.waveText.text = `WAVE  ${this.wave}`
+    this.waveText.text = `${T.hud.waveLabel}  ${this.wave}`
 
-    this.waveAnnounce.text  = `WAVE ${this.wave}`
+    this.waveAnnounce.text  = `${T.hud.waveLabel} ${this.wave}`
     this.waveAnnounce.alpha = 1
     let t = 0
     const fade = () => {
@@ -333,7 +334,7 @@ export class AsteroidsScene implements Scene {
         if (circlesOverlap(b.x, b.y, b.radius, this.ship.x, this.ship.y, this.ship.radius)) {
           b.life = 0
           this.lives--
-          this.livesText.text = `LIVES  ${'♥ '.repeat(this.lives).trim() || '—'}`
+          this.livesText.text = `${T.hud.livesLabel}  ${'♥ '.repeat(this.lives).trim() || '—'}`
           this.shake = 10
           RetroAudio.die()
           if (this.lives <= 0) this.endGame()
@@ -357,7 +358,7 @@ export class AsteroidsScene implements Scene {
         this.ship.setShield(true)
       } else {
         this.lives = Math.min(this.lives + 1, 5)
-        this.livesText.text = `LIVES  ${'♥ '.repeat(this.lives).trim()}`
+        this.livesText.text = `${T.hud.livesLabel}  ${'♥ '.repeat(this.lives).trim()}`
       }
       this.updatePowerupHUD()
     }
@@ -365,8 +366,8 @@ export class AsteroidsScene implements Scene {
 
   private updatePowerupHUD() {
     const parts: string[] = []
-    if (this.tripleShotTimer > 0) parts.push('» 3-SHOT «')
-    if (this.shieldTimer      > 0) parts.push('» SHIELD «')
+    if (this.tripleShotTimer > 0) parts.push(T.hud.tripleShot)
+    if (this.shieldTimer      > 0) parts.push(T.hud.shield)
     this.powerupText.text = parts.join('   ')
   }
 
@@ -374,9 +375,9 @@ export class AsteroidsScene implements Scene {
     if (this.comboTimer > 0) this.comboMult = Math.min(this.comboMult + 1, 3)
     this.comboTimer = COMBO_WINDOW
     this.score += baseScore * this.comboMult
-    this.scoreText.text = `SCORE\n${String(this.score).padStart(5, '0')}`
+    this.scoreText.text = `${T.hud.scoreLabel}\n${String(this.score).padStart(5, '0')}`
     if (this.comboMult > 1) {
-      this.comboText.text       = `${this.comboMult}× COMBO`
+      this.comboText.text       = `${this.comboMult}${T.hud.comboSuffix}`
       this.comboText.style.fill = this.comboMult === 3 ? '#ff6622' : '#ffdd00'
       this.comboText.alpha      = 1
     }
@@ -404,7 +405,7 @@ export class AsteroidsScene implements Scene {
         RetroAudio.die()
         this.shake = 10
         this.lives--
-        this.livesText.text = `LIVES  ${'♥ '.repeat(this.lives).trim() || '—'}`
+        this.livesText.text = `${T.hud.livesLabel}  ${'♥ '.repeat(this.lives).trim() || '—'}`
         if (this.lives <= 0) { this.updateHyperspaceHUD(); this.endGame(); return }
         this.ship.reset(W() / 2, H() / 2)
       } else {
@@ -429,10 +430,10 @@ export class AsteroidsScene implements Scene {
     if (this.inHyperspace) {
       this.hyperspaceText.alpha = 0
     } else if (this.hyperspaceTimer > 0) {
-      this.hyperspaceText.text  = 'HYPR COOLING'
+      this.hyperspaceText.text  = T.hud.hyperspaceCooling
       this.hyperspaceText.alpha = 0.2
     } else {
-      this.hyperspaceText.text  = '[SHF] HYPR'
+      this.hyperspaceText.text  = T.hud.hyperspaceReady
       this.hyperspaceText.alpha = 0.35
     }
   }
@@ -520,7 +521,7 @@ export class AsteroidsScene implements Scene {
       if (!a.view.visible) continue
       if (circlesOverlap(this.ship.x, this.ship.y, this.ship.radius, a.x, a.y, a.radius)) {
         this.lives--
-        this.livesText.text = `LIVES  ${'♥ '.repeat(this.lives).trim() || '—'}`
+        this.livesText.text = `${T.hud.livesLabel}  ${'♥ '.repeat(this.lives).trim() || '—'}`
 
         this.shake = 10
         RetroAudio.die()
@@ -623,7 +624,7 @@ export class AsteroidsScene implements Scene {
       if (!circlesOverlap(this.ship.x, this.ship.y, this.ship.radius, pl.x, pl.y, pl.radius)) continue
 
       this.lives--
-      this.livesText.text = `LIVES  ${'♥ '.repeat(this.lives).trim() || '—'}`
+      this.livesText.text = `${T.hud.livesLabel}  ${'♥ '.repeat(this.lives).trim() || '—'}`
       this.shake = 10
       RetroAudio.die()
       if (this.lives <= 0) this.endGame()
@@ -634,7 +635,7 @@ export class AsteroidsScene implements Scene {
   private endGame() {
     this.gameOver          = true
     this.ship.view.visible = false
-    this.msgText.text      = `GAME OVER`
+    this.msgText.text      = T.common.gameOver
 
     // brief pause so the player sees what killed them, then hand off to React
     setTimeout(() => this.onGameOver?.(this.score), 600)
