@@ -2,6 +2,14 @@
 
 A multiplayer mini-game platform built as a pnpm monorepo.
 
+## Games
+
+| Game | Route | Description |
+|------|-------|-------------|
+| Asteroids | `/asteroids` | Classic arcade shooter with planets, gravity, power-ups, and a live leaderboard |
+| 2D Arena | `/game` | Multiplayer 2D arena (Pixi.js) |
+| 3D Cube | `/game3d` | Interactive 3D scene (Three.js) |
+
 ## Stack
 
 | Layer | Technology |
@@ -9,9 +17,10 @@ A multiplayer mini-game platform built as a pnpm monorepo.
 | Frontend | React 19 + TypeScript + Vite |
 | 2D engine | Pixi.js v8 |
 | 3D engine | Three.js r168 |
+| Animation / timers | GSAP |
 | Multiplayer | Colyseus 0.15 (Node.js) |
 | Auth & DB | Supabase |
-| Sound | Howler.js |
+| Sound | Web Audio API |
 | Deploy | Vercel (client) + Railway (server) |
 
 ## Monorepo layout
@@ -79,10 +88,11 @@ SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key>
 
 ```sql
 create table scores (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references auth.users not null,
-  game text not null,
-  score integer not null,
+  id         uuid        primary key default gen_random_uuid(),
+  user_id    uuid        references auth.users not null,
+  game       text        not null,
+  score      integer     not null,
+  username   text,
   created_at timestamptz default now()
 );
 
