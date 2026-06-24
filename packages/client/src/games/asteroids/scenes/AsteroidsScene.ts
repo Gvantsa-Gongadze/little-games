@@ -5,6 +5,7 @@ import { Bullet }            from '../entities/Bullet'
 import { Asteroid }          from '../entities/Asteroid'
 import { UFO, UFO_SCORE }              from '../entities/UFO'
 import { PowerUp, DROP_CHANCE, randomType } from '../entities/PowerUp'
+import { Planet }                           from '../entities/Planet'
 import { Particle, explode }           from '../entities/Particle'
 import { RetroAudio }        from '../audio/RetroAudio'
 import { wrap, circlesOverlap, randomEdgePosition } from '../utils/math'
@@ -28,6 +29,7 @@ export class AsteroidsScene implements Scene {
   private ufoBullets:      Bullet[]    = []
   private ufo:             UFO | null  = null
   private ufoTimer         = 1800
+  private planets:         Planet[]    = []
   private powerUps:        PowerUp[]   = []
   private tripleShotTimer  = 0   // frames remaining
   private shieldTimer      = 0   // frames remaining
@@ -58,6 +60,7 @@ export class AsteroidsScene implements Scene {
     this.onGameOver = onGameOver
 
     this.view.addChild(this.buildStarfield())
+    this.spawnPlanets()
 
     // HUD — score top-center
     this.scoreText = new Text({
@@ -201,6 +204,7 @@ export class AsteroidsScene implements Scene {
     if (this.gameOver) return
 
     this.ship.update(delta, this.keys)
+    this.applyPlanetGravity(delta)
     wrap(this.ship, W(), H())
 
     // thrust sound
@@ -262,6 +266,7 @@ export class AsteroidsScene implements Scene {
 
     for (const b of this.bullets)  { b.update(delta); wrap(b, W(), H()) }
     for (const a of this.asteroids) { a.update(delta); wrap(a, W(), H()) }
+    for (const pl of this.planets)  { pl.update(delta); wrap(pl, W(), H()) }
     for (const p of this.particles)   p.update(delta)
     for (const b of this.ufoBullets) { b.update(delta); wrap(b, W(), H()) }
     for (const p of this.powerUps)    p.update(delta)
@@ -286,10 +291,12 @@ export class AsteroidsScene implements Scene {
     }
 
     this.checkAsteroidCollisions()
+    this.checkAsteroidPlanetCollisions()
     this.checkBulletCollisions()
     this.checkShipCollisions()
     this.checkUFOCollisions()
     this.checkPowerUpCollisions()
+    this.checkPlanetCollisions()
     this.cleanup()
 
     if (this.asteroids.length === 0) this.spawnWave()
@@ -539,6 +546,89 @@ export class AsteroidsScene implements Scene {
 
     this.powerUps.filter(p => p.expired).forEach(p => p.view.destroy())
     this.powerUps = this.powerUps.filter(p => !p.expired)
+  }
+
+  private checkAsteroidPlanetCollisions() {
+    for (const a of this.asteroids) {
+      if (!a.view.visible) continue
+      for (const pl of this.planets) {
+        const dx      = a.x - pl.x
+        const dy      = a.y - pl.y
+        const dist    = Math.hypot(dx, dy)
+        const minDist = a.radius + pl.radius
+        if (dist >= minDist || dist < 1) continue
+
+        // push asteroid out of overlap
+        const nx = dx / dist
+        const ny = dy / dist
+        a.x += nx * (minDist - dist)
+        a.y += ny * (minDist - dist)
+
+        // elastic bounce off immovable planet with slight energy loss
+        const dot = a.vx * nx + a.vy * ny
+        if (dot < 0) {
+          a.vx = (a.vx - 2 * dot * nx) * 0.85
+          a.vy = (a.vy - 2 * dot * ny) * 0.85
+        }
+
+        // small impact burst
+        const frags = explode(a.x, a.y, a.vx * 0.3, a.vy * 0.3, 'small')
+        for (const p of frags) { this.particles.push(p); this.view.addChild(p.view) }
+        RetroAudio.explode('small')
+      }
+    }
+  }
+
+  private spawnPlanets() {
+    const cx     = W() / 2
+    const cy     = H() / 2
+    const count  = Math.random() < 0.45 ? 2 : 1
+    const margin = 80
+
+    for (let attempt = 0; attempt < 100 && this.planets.length < count; attempt++) {
+      const r = 30 + Math.random() * 20
+      const x = margin + r + Math.random() * (W() - 2 * (margin + r))
+      const y = margin + r + Math.random() * (H() - 2 * (margin + r))
+
+      if ((x - cx) ** 2 + (y - cy) ** 2 < 220 * 220) continue
+      if (this.planets.some(p => (x - p.x) ** 2 + (y - p.y) ** 2 < (r + p.radius + 120) ** 2)) continue
+
+      const planet = new Planet(x, y, r)
+      this.planets.push(planet)
+      this.view.addChild(planet.view)
+    }
+  }
+
+  private applyPlanetGravity(delta: number) {
+    for (const pl of this.planets) {
+      const dx         = pl.x - this.ship.x
+      const dy         = pl.y - this.ship.y
+      const distSq     = dx * dx + dy * dy
+      const gravRadius = pl.radius * 5
+      if (distSq > gravRadius * gravRadius) continue
+      const dist     = Math.sqrt(distSq)
+      if (dist < 1) continue
+      const strength = 0.012 * (1 - dist / gravRadius) * delta
+      this.ship.vx  += (dx / dist) * strength
+      this.ship.vy  += (dy / dist) * strength
+    }
+  }
+
+  private checkPlanetCollisions() {
+    for (const pl of this.planets) {
+      for (const b of this.bullets)    if (circlesOverlap(b.x, b.y, b.radius, pl.x, pl.y, pl.radius)) b.life = 0
+      for (const b of this.ufoBullets) if (circlesOverlap(b.x, b.y, b.radius, pl.x, pl.y, pl.radius)) b.life = 0
+
+      if (this.ship.invincible || this.shieldTimer > 0) continue
+      if (!circlesOverlap(this.ship.x, this.ship.y, this.ship.radius, pl.x, pl.y, pl.radius)) continue
+
+      this.lives--
+      this.livesText.text = `LIVES  ${'♥ '.repeat(this.lives).trim() || '—'}`
+      this.shake = 10
+      RetroAudio.die()
+      if (this.lives <= 0) this.endGame()
+      else                 this.ship.reset(W() / 2, H() / 2)
+    }
   }
 
   private endGame() {
