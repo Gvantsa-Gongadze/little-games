@@ -46,6 +46,8 @@ export class AsteroidsScene implements Scene {
   private comboTimer      = 0     // frames remaining in combo window
   private hyperspaceTimer = 0     // cooldown frames remaining
   private inHyperspace    = false
+  private betweenWaves    = false
+  private waveDelay       = 0
   private onGameOver?: (score: number) => void
 
   private scoreText:      Text
@@ -173,9 +175,10 @@ export class AsteroidsScene implements Scene {
   }
   private _removeInput = () => {}
 
-  private spawnWave() {
+  private announceWave() {
     this.wave++
     this.waveText.text = `${T.hud.waveLabel}  ${this.wave}`
+    this.ufoTimer = Math.max(900, 1800 - this.wave * 60)
 
     this.waveAnnounce.text  = `${T.hud.waveLabel} ${this.wave}`
     this.waveAnnounce.alpha = 1
@@ -186,12 +189,10 @@ export class AsteroidsScene implements Scene {
       if (this.waveAnnounce.alpha > 0) requestAnimationFrame(fade)
     }
     setTimeout(() => requestAnimationFrame(fade), 800)
+  }
 
-    // speed caps at 2.5× on wave 13+
+  private spawnAsteroids() {
     const speedMult = Math.min(1 + (this.wave - 1) * 0.12, 2.5)
-    // UFO arrives sooner each wave, minimum 15 s
-    this.ufoTimer = Math.max(900, 1800 - this.wave * 60)
-
     const count = 2 + this.wave
     for (let i = 0; i < count; i++) {
       const pos = randomEdgePosition(W(), H())
@@ -199,6 +200,11 @@ export class AsteroidsScene implements Scene {
       this.asteroids.push(ast)
       this.view.addChild(ast.view)
     }
+  }
+
+  private spawnWave() {
+    this.announceWave()
+    this.spawnAsteroids()
   }
 
   update(delta: number) {
@@ -300,7 +306,18 @@ export class AsteroidsScene implements Scene {
     this.checkPlanetCollisions()
     this.cleanup()
 
-    if (this.asteroids.length === 0) this.spawnWave()
+    if (this.asteroids.length === 0 && !this.betweenWaves) {
+      this.betweenWaves = true
+      this.waveDelay    = 90   // ~1.5 s at 60 fps
+      this.announceWave()
+    }
+    if (this.betweenWaves) {
+      this.waveDelay -= delta
+      if (this.waveDelay <= 0) {
+        this.betweenWaves = false
+        this.spawnAsteroids()
+      }
+    }
   }
 
   private spawnUFO() {
