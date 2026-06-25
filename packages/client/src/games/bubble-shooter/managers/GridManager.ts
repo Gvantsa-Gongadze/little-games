@@ -1,7 +1,7 @@
 import { Container } from 'pixi.js'
 import { Bubble } from '../entities/Bubble'
 import {
-  BUBBLE_RADIUS, COL_SPACING, ROW_SPACING, COLS,
+  BUBBLE_RADIUS, COL_SPACING, ROW_SPACING, COLS, COLOR_HEX,
   type BubbleColor,
 } from '../constants'
 
@@ -191,6 +191,18 @@ export class GridManager {
     cell.bubble = null
     this.container.removeChild(bubble.view)
     return bubble
+  }
+
+  getBoardColors(): BubbleColor[] {
+    const colors = new Set<BubbleColor>()
+    for (const row of this.grid) {
+      if (!row) continue
+      for (const cell of row) {
+        if (cell?.bubble) colors.add(cell.bubble.color)
+      }
+    }
+    if (colors.size === 0) return Object.keys(COLOR_HEX) as BubbleColor[]
+    return [...colors]
   }
 
   isEmpty(): boolean {

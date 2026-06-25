@@ -1,5 +1,6 @@
-import { Application, Container, Graphics } from 'pixi.js'
+import { Application, Container, Graphics, Text } from 'pixi.js'
 import { gsap } from 'gsap'
+import T from '@/data/strings.json'
 import type { Scene } from '@/engine/SceneManager'
 import { GridManager } from '../managers/GridManager'
 import { Launcher }    from '../entities/Launcher'
@@ -10,9 +11,6 @@ import {
   type BubbleColor,
 } from '../constants'
 import { LEVEL_1 } from '../data/levels'
-
-const ALL_COLORS: BubbleColor[] = ['red', 'blue', 'green', 'yellow', 'purple', 'orange']
-const randomColor = (): BubbleColor => ALL_COLORS[Math.floor(Math.random() * ALL_COLORS.length)]
 
 type InFlight = { bubble: Bubble; vx: number; vy: number }
 
@@ -31,7 +29,7 @@ export class BubbleShooterScene implements Scene {
 
   private inFlight:      InFlight | null = null
   private currentBubble: Bubble
-  private currentColor:  BubbleColor
+  private nextBubble:    Bubble
 
   private launcherX: number
   private launcherY: number
@@ -61,12 +59,14 @@ export class BubbleShooterScene implements Scene {
     this.grid.populate(LEVEL_1)
     this.gridLayer.addChild(this.grid.container)
 
-    // Launcher + preview bubble
+    // Launcher + current and next bubbles
     this.launcher = new Launcher(this.launcherX, this.launcherY)
-    this.currentColor  = randomColor()
-    this.currentBubble = new Bubble(this.currentColor)
+    this.currentBubble = new Bubble(this.sampleColor())
     this.currentBubble.view.x = this.launcherX
     this.currentBubble.view.y = this.launcherY
+    this.nextBubble = new Bubble(this.sampleColor())
+    this.nextBubble.view.x = this.launcherX + 65
+    this.nextBubble.view.y = this.launcherY
 
     // Playfield wall lines (visual guides matching bounce walls)
     const walls = new Graphics()
@@ -78,8 +78,20 @@ export class BubbleShooterScene implements Scene {
     bar.rect(0, H - 36, W, 36).fill({ color: 0x0d1a22 })
     bar.moveTo(0, H - 36).lineTo(W, H - 36).stroke({ color: 0x3388aa, alpha: 0.35, width: 1 })
 
-    // Launcher layer: aim guide behind launcher, preview bubble in front
-    this.launcherLayer.addChild(this.aimGuide, this.launcher.view, this.currentBubble.view)
+    // "NEXT" label above the preview slot
+    const nextLabel = new Text({
+      text: T.bubble.next,
+      style: { fill: 0x888888, fontSize: 8, fontFamily: '"Press Start 2P"' },
+    })
+    nextLabel.anchor.set(0.5)
+    nextLabel.x = this.launcherX + 65
+    nextLabel.y = this.launcherY - BUBBLE_RADIUS - 14
+
+    // Launcher layer: aim guide behind launcher, then bubbles and label in front
+    this.launcherLayer.addChild(
+      this.aimGuide, this.launcher.view, this.currentBubble.view,
+      nextLabel, this.nextBubble.view,
+    )
 
     this.view.addChild(this.gridLayer, this.flightLayer, this.dropLayer, walls, bar, this.launcherLayer)
 
@@ -89,6 +101,11 @@ export class BubbleShooterScene implements Scene {
     window.addEventListener('mousemove', this.boundMouseMove)
     window.addEventListener('click',     this.boundClick)
 
+  }
+
+  private sampleColor(): BubbleColor {
+    const colors = this.grid.getBoardColors()
+    return colors[Math.floor(Math.random() * colors.length)]
   }
 
   private toAimAngle(mx: number, my: number): number {
@@ -122,12 +139,14 @@ export class BubbleShooterScene implements Scene {
       vy: Math.sin(angle) * BUBBLE_SPEED,
     }
 
-    // Queue next bubble at launcher
-    this.currentColor  = randomColor()
-    this.currentBubble = new Bubble(this.currentColor)
+    // Advance queue: next → current, sample a new next
+    this.currentBubble = this.nextBubble
     this.currentBubble.view.x = this.launcherX
     this.currentBubble.view.y = this.launcherY
-    this.launcherLayer.addChild(this.currentBubble.view)
+    this.nextBubble = new Bubble(this.sampleColor())
+    this.nextBubble.view.x = this.launcherX + 65
+    this.nextBubble.view.y = this.launcherY
+    this.launcherLayer.addChild(this.nextBubble.view)
   }
 
   private drawAimGuide() {

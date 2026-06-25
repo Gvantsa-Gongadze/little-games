@@ -249,15 +249,18 @@ COLOR_HEX         = { red: 0xe74c3c, blue: 0x3498db, green: 0x2ecc71,
 | `flightLayer` | In-flight bubble while travelling |
 | `dropLayer` | Floating bubbles mid-fall animation |
 | `walls` + `bar` | Playfield wall lines + bottom platform (static Graphics) |
-| `launcherLayer` | Aim guide + launcher visual + preview bubble |
+| `launcherLayer` | Aim guide + launcher visual + current bubble + "NEXT" label + next bubble preview |
 
 Key fields:
 - `wallLeft` / `wallRight` — x-coordinates of the grid's left and right edges (`startX - BUBBLE_RADIUS` and `startX - BUBBLE_RADIUS + gridPixelWidth`). Bounce walls are the **grid edges**, not the screen edges — this keeps fired bubbles inside the grid's column range at all times.
+- `currentBubble` — the bubble sitting at the launcher, ready to fire.
+- `nextBubble` — preview bubble rendered 65 px to the right of the launcher center, with a "NEXT" label (`T.bubble.next`) above it. Both live in `launcherLayer`.
 
 Key behaviours:
+- **Color sampling** (`sampleColor()`): calls `grid.getBoardColors()` and picks a random color from that set. Only colors currently present on the board are ever spawned — prevents unwinnable situations where the player holds a color that no longer exists on the grid. Falls back to all 6 colors if the board is empty.
 - **Mouse aim** (`mousemove`): `toAimAngle()` converts pointer position to an angle clamped to `[-π + MIN_AIM_ANGLE, -MIN_AIM_ANGLE]` (always upward, never near-horizontal). Updates `Launcher.setAngle()` and sets `aimDirty = true` — does NOT call `drawAimGuide` directly (avoids rAF violation).
 - **Aim guide dirty flag**: `aimDirty` boolean; set `true` on every mouse move, cleared in `update()` after redrawing once per frame. Prevents the 38-circle Graphics redraw from firing hundreds of times per second from raw `mousemove` events.
-- **Fire** (`click`): hands `currentBubble` to `flightLayer` with velocity `(cos θ × SPEED, sin θ × SPEED)`. Creates a new `currentBubble` preview at launcher.
+- **Fire** (`click`): hands `currentBubble` to `flightLayer`. Advances the queue: `nextBubble` slides to launcher position and becomes `currentBubble` (stays in `launcherLayer`, just repositioned); a new `nextBubble` is created via `sampleColor()` and added to `launcherLayer` at the preview position.
 - **Aim guide** (`drawAimGuide`): traces dots every 16 px from barrel tip, simulating wall bounces against `wallLeft`/`wallRight`, fading out over 38 steps. Stops at `GRID_TOP_PAD`. Only called from `update()`, never from event handlers.
 - **Physics** (`update(delta)`): advances position; reflects `vx` off `wallLeft` / `wallRight` using `Math.abs` (prevents tunnelling).
 - **Landing triggers**: `shouldLand = true` when (a) `y - BUBBLE_RADIUS ≤ GRID_TOP_PAD` (top boundary), OR (b) any nearby occupied grid cell is within `2 × BUBBLE_RADIUS` of the bubble centre (checks `pixelToCell` + 6 hex neighbours each frame).
@@ -288,6 +291,7 @@ Key behaviours:
 - **`findFloating()`** → BFS seeded from every occupied cell in row 0; returns all occupied cells NOT reachable from the top (disconnected after a pop).
 - **`removeBubble(col, row)`** → removes Pixi view, destroys it, nulls the cell. Used for instant removal (popped cluster).
 - **`extractBubble(col, row)`** → removes bubble from grid state and grid container but returns the `Bubble` object alive so the caller can animate it. Used by `animateDrop`.
+- **`getBoardColors()`** → scans all occupied cells, returns a deduplicated `BubbleColor[]` of every color currently on the board. Falls back to all 6 colors if the board is empty. Used by `sampleColor()` in the scene to ensure the launcher never produces a color that can't match anything.
 - **`isEmpty()`** → `true` if no bubble remains in the grid (win condition).
 
 **`data/levels.ts`**
@@ -409,8 +413,8 @@ Auth: Email provider enabled. Username stored in `auth.users.user_metadata.usern
 | Bubble Shooter — floating drop | ✓ `findFloating` + `animateDrop`: disconnected bubbles fall with GSAP gravity animation |
 | Bubble Shooter — scoring | No score tracking or HUD yet |
 | Bubble Shooter — win / lose | No win (board clear) or lose (bubble crosses danger line) condition yet |
-| Bubble Shooter — next preview | `currentBubble` shows at launcher but no separate "next" display yet |
-| Bubble Shooter — colour sampling | Random color ignores board state; should only spawn colors present on board |
+| Bubble Shooter — next preview | ✓ `nextBubble` rendered at `launcherX + 65` with "NEXT" label; queue advances on every fire |
+| Bubble Shooter — colour sampling | ✓ `sampleColor()` calls `getBoardColors()` — only spawns colors present on the board |
 | Bubble Shooter — board pressure | Optional advancing rows not yet implemented |
 
 ---
