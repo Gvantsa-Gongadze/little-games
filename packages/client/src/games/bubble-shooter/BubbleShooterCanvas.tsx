@@ -10,8 +10,9 @@ interface Props {
   onGameOver?: (score: number, state: 'won' | 'lost') => void
 }
 
-const QUEUE_TARGET = 20
-const REFILL_AT    = 8
+const INITIAL_REQUEST = 80   // board (53 cells) + launcher bubbles + early-shot buffer
+const QUEUE_TARGET    = 20   // refill target after the board is built
+const REFILL_AT       = 8
 
 export default function BubbleShooterCanvas({ onGameOver }: Props) {
   const mountRef      = useRef<HTMLDivElement>(null)
@@ -48,7 +49,7 @@ export default function BubbleShooterCanvas({ onGameOver }: Props) {
       // Fetch initial batch and init Pixi in parallel to minimise startup time
       const colorsReady = new Promise<void>(resolve => {
         resolveInitial = resolve
-        room!.send('request_colors', { count: QUEUE_TARGET, boardColors: [] })
+        room!.send('request_colors', { count: INITIAL_REQUEST, boardColors: [] })
       })
 
       await Promise.all([

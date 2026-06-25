@@ -8,10 +8,9 @@ import { Bubble }      from '../entities/Bubble'
 import {
   BUBBLE_RADIUS, COL_SPACING, COLS, GRID_TOP_PAD, HUD_FONT, ROW_SPACING,
   BUBBLE_SPEED, LAUNCHER_Y_OFFSET, BARREL_LENGTH, MIN_AIM_ANGLE,
-  SPECIAL_SPAWN_RATE, ADVANCE_EVERY,
+  SPECIAL_SPAWN_RATE, ADVANCE_EVERY, INITIAL_ROWS,
   type BubbleColor, type SpecialType,
 } from '../constants'
-import { LEVEL_1 } from '../data/levels'
 
 type InFlight = { bubble: Bubble; vx: number; vy: number }
 
@@ -75,7 +74,11 @@ export class BubbleShooterScene implements Scene {
     // Bubbles must stay inside the playfield so they always land on the grid.
     this.wallLeft  = startX - BUBBLE_RADIUS          // left face of col-0 bubble
     this.wallRight = startX - BUBBLE_RADIUS + gridPixelWidth  // right face of col-10 bubble
-    this.grid.populate(LEVEL_1)
+    // Build the initial board from server-provided colors so every game starts differently
+    const initialLayout = Array.from({ length: INITIAL_ROWS }, (_, r) =>
+      Array.from({ length: this.grid.colsInRow(r) }, () => this.getNextColor())
+    )
+    this.grid.populate(initialLayout)
     this.gridLayer.addChild(this.grid.container)
 
     // Launcher + current and next bubbles
