@@ -7,6 +7,7 @@ A multiplayer mini-game platform built as a pnpm monorepo.
 | Game | Route | Description |
 |------|-------|-------------|
 | Asteroids | `/asteroids` | Classic arcade shooter with planets, gravity, power-ups, and a live leaderboard |
+| Bubble Shooter | `/bubble-shooter` | Aim and fire coloured bubbles to pop matching clusters and clear the board |
 | 2D Arena | `/game` | Multiplayer 2D arena (Pixi.js) |
 | 3D Cube | `/game3d` | Interactive 3D scene (Three.js) |
 

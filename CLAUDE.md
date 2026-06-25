@@ -53,11 +53,12 @@ little-games/
 
 ### Routing (`App.tsx`)
 ```
-/           → redirect to /lobby
-/lobby      → pages/Home.tsx        auth gate + game picker grid
-/game       → pages/Game.tsx        Pixi.js 2D arena (arena-2d)
-/game3d     → pages/Game3D.tsx      Three.js 3D cube
-/asteroids  → pages/Asteroids.tsx   Asteroids game
+/                → redirect to /lobby
+/lobby           → pages/Home.tsx             auth gate + game picker grid
+/game            → pages/Game.tsx             Pixi.js 2D arena (arena-2d)
+/game3d          → pages/Game3D.tsx           Three.js 3D cube
+/asteroids       → pages/Asteroids.tsx        Asteroids game
+/bubble-shooter  → pages/BubbleShooter.tsx    Bubble Shooter game
 ```
 
 ### Entry Point (`main.tsx`)
@@ -123,14 +124,16 @@ T.home.*         title, tagline, signInTagline, usernamePlaceholder, emailPlaceh
                  passwordPlaceholder, confirmEmail, signIn, signUp, signOut
 T.touch.*        left, right, thrust, fire, hyperspace
 T.arena2d.*      pressSpace
+T.bubble.*       pressSpace, gameOver, win, score, next
 ```
 
-**`data/games.ts`** — `GAMES: GameMeta[]`
+**`data/games.ts`** — `GAMES: GameMeta[]`; `tag` type: `'2D' | '3D' | 'ARCADE' | 'CLASSIC'`
 ```ts
 [
-  { id: 'asteroids', title: 'Asteroids', route: '/asteroids', tag: 'CLASSIC', accent: '#33ff66', emoji: '🚀' },
-  { id: '2d-game',   title: '2D Arena',  route: '/game',      tag: '2D',      accent: '#00ff99', emoji: '🟩' },
-  { id: '3d-cube',   title: '3D Cube',   route: '/game3d',    tag: '3D',      accent: '#a78bfa', emoji: '🟪' },
+  { id: 'asteroids',       title: 'Asteroids',       route: '/asteroids',       tag: 'CLASSIC', accent: '#33ff66', emoji: '🚀' },
+  { id: '2d-game',         title: '2D Arena',         route: '/game',            tag: '2D',      accent: '#00ff99', emoji: '🟩' },
+  { id: '3d-cube',         title: '3D Cube',          route: '/game3d',          tag: '3D',      accent: '#a78bfa', emoji: '🟪' },
+  { id: 'bubble-shooter',  title: 'Bubble Shooter',  route: '/bubble-shooter',  tag: 'ARCADE',  accent: '#ff6eb4', emoji: '🫧' },
 ]
 ```
 
@@ -212,6 +215,66 @@ interface Scene { view: Container; update(delta: number): void; destroy(): void 
 **`ThreeCanvas.tsx`** — WebGL detection, `WebGLRenderer` + `CubeScene` + `OrbitControls`. RAF loop, `ResizeObserver`.
 
 **`scenes/CubeScene.ts`** — Green rotating cube (`0x00ff99`), `update(delta)` spins on x and y by `0.01 * delta`.
+
+### Bubble Shooter Game (`games/bubble-shooter/`)
+
+**`constants.ts`** — single source of truth for all numeric tuning values:
+```ts
+BUBBLE_RADIUS     = 20           // px, radius of every bubble
+COL_SPACING       = 40           // px, centre-to-centre horizontal (= BUBBLE_RADIUS * 2)
+ROW_SPACING       ≈ 34.6         // px, centre-to-centre vertical (= BUBBLE_RADIUS * √3, hex packing)
+COLS              = 11           // bubbles per even row; odd rows have COLS-1 (10)
+INITIAL_ROWS      = 5            // rows pre-filled at level start
+GRID_TOP_PAD      = 40           // px from top of canvas to row-0 centre
+BUBBLE_SPEED      = 12           // px per frame at deltaTime=1
+LAUNCHER_Y_OFFSET = 70           // px from bottom of screen to launcher centre
+BARREL_LENGTH     = 44           // px from launcher centre to barrel tip
+MIN_AIM_ANGLE     = 18° (rad)    // minimum angle from horizontal — prevents near-horizontal shots
+BubbleColor       = 'red' | 'blue' | 'green' | 'yellow' | 'purple' | 'orange'
+COLOR_HEX         = { red: 0xe74c3c, blue: 0x3498db, green: 0x2ecc71,
+                       yellow: 0xf1c40f, purple: 0x9b59b6, orange: 0xe67e22 }
+```
+
+**`BubbleShooterCanvas.tsx`**
+- Creates Pixi `Application` (dark `#0a0a1a`, antialias, `devicePixelRatio` resolution).
+- Mounts `BubbleShooterScene`, wires `ticker → scene.update(deltaTime)`.
+- Handles `resize` → `app.renderer.resize`.
+- Guards against destroyed-before-init with `destroyed` + `initDone` flags.
+
+**`scenes/BubbleShooterScene.ts`** — main game loop. Three rendering layers (back → front):
+
+| Layer | Contents |
+|---|---|
+| `gridLayer` | Static grid bubbles (via `grid.container`) |
+| `flightLayer` | In-flight bubble while travelling |
+| `launcherLayer` | Aim guide + launcher visual + preview bubble |
+
+Key behaviours:
+- **Mouse aim** (`mousemove`): `toAimAngle()` converts pointer position to an angle clamped to `[-π + MIN_AIM_ANGLE, -MIN_AIM_ANGLE]` (always upward, never near-horizontal). Updates `Launcher.setAngle()` and redraws aim guide.
+- **Fire** (`click`): hands `currentBubble` to `flightLayer` with velocity `(cos θ × SPEED, sin θ × SPEED)`. Creates a new `currentBubble` preview at launcher.
+- **Aim guide** (`drawAimGuide`): traces dots every 16 px from barrel tip, simulating wall bounces, fading out over 38 steps. Stops at `GRID_TOP_PAD`.
+- **Physics** (`update(delta)`): advances in-flight bubble position; reflects `vx` with `Math.abs` on left wall, `-Math.abs` on right wall (prevents tunnelling). When `y - BUBBLE_RADIUS <= GRID_TOP_PAD`, destroys bubble and clears `inFlight` (placeholder — step 3 will snap to grid).
+- **One bubble in the air at a time** — `handleFire` returns early if `inFlight` is not null.
+- `destroy()` removes both `mousemove` and `click` listeners.
+
+**`entities/Bubble.ts`**
+- `Bubble(color)` draws three layers: filled body circle, specular highlight (upper-left, `alpha 0.28`), rim stroke (`alpha 0.25`).
+- Colors sourced from `COLOR_HEX` in `constants.ts`.
+
+**`entities/Launcher.ts`**
+- `Launcher(x, y)` — fixed position container. Draws two-ring base (outer filled, inner stroke accent).
+- `setAngle(angle)` — clears and redraws barrel as three lines: shadow offset, body (`#55aacc`, width 9), highlight stripe (width 3, `alpha 0.4`). Called every frame the mouse moves.
+
+**`managers/GridManager.ts`**
+- Owns the grid state as `GridCell[][] = { bubble: Bubble | null }`.
+- **`cellToPixel(col, row)`** → `{ x, y }`: even rows unshifted; odd rows shifted right by `BUBBLE_RADIUS`.
+- **`pixelToCell(px, py)`** → `{ col, row }`: inverse of above; clamps to valid range.
+- **`colsInRow(row)`** → `COLS` for even rows, `COLS - 1` for odd rows.
+- **`place(col, row, bubble)`** → positions bubble view and adds to `container`.
+- **`populate(layout)`** → fills grid from a 2-D `BubbleColor | null` array.
+
+**`data/levels.ts`**
+- `LEVEL_1`: 5-row starter layout. Even rows: 11 cols; odd rows: 10 cols (offset row, no trailing element).
 
 ### Auth & Data (`lib/`, `hooks/`)
 
@@ -324,6 +387,14 @@ Auth: Email provider enabled. Username stored in `auth.users.user_metadata.usern
 | Arena-2D game-over trigger | `GameScene` accepts `onGameOver` but never calls it |
 | Multiplayer sync | Client joins room but never sends `'move'` or reads server state |
 | Shared types usage | `IGameState`/`PlayerState` in `packages/shared` unused |
+| Bubble Shooter — grid snap | In-flight bubble is destroyed at grid boundary; snap + match not yet wired |
+| Bubble Shooter — match & pop | BFS colour-match and cluster pop not yet implemented |
+| Bubble Shooter — floating drop | Connectivity check + falling bubbles not yet implemented |
+| Bubble Shooter — scoring | No score tracking or HUD yet |
+| Bubble Shooter — win / lose | No win (board clear) or lose (bubble crosses danger line) condition yet |
+| Bubble Shooter — next preview | `currentBubble` shows at launcher but no separate "next" display yet |
+| Bubble Shooter — colour sampling | Random color ignores board state; should only spawn colors present on board |
+| Bubble Shooter — board pressure | Optional advancing rows not yet implemented |
 
 ---
 
