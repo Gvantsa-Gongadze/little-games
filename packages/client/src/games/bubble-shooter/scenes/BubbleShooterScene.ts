@@ -34,11 +34,9 @@ export class BubbleShooterScene implements Scene {
   private score          = 0
   private scoreText:     Text
 
-  private gameState:    'playing' | 'won' | 'lost' = 'playing'
-  private overlayLayer  = new Container()
-  private screenW:      number
-  private screenH:      number
-  private dangerY:      number
+  private gameState:   'playing' | 'won' | 'lost' = 'playing'
+  private onGameOver?: (score: number, state: 'won' | 'lost') => void
+  private dangerY:     number
 
   private launcherX: number
   private launcherY: number
@@ -54,11 +52,10 @@ export class BubbleShooterScene implements Scene {
   private boundClick:     (e: MouseEvent) => void
   private boundKeyDown:   (e: KeyboardEvent) => void
 
-  constructor(app: Application) {
+  constructor(app: Application, onGameOver?: (score: number, state: 'won' | 'lost') => void) {
+    this.onGameOver = onGameOver
     const W = app.screen.width
     const H = app.screen.height
-    this.screenW   = W
-    this.screenH   = H
     this.launcherX = W / 2
     this.launcherY = H - LAUNCHER_Y_OFFSET
     this.dangerY   = this.launcherY - BUBBLE_RADIUS * 4
@@ -141,7 +138,6 @@ export class BubbleShooterScene implements Scene {
     this.view.addChild(
       this.gridLayer, this.flightLayer, this.dropLayer,
       walls, bar, this.launcherLayer, this.advanceBar, hudLayer,
-      this.overlayLayer,
     )
 
     // Pointer + keyboard events
@@ -456,80 +452,7 @@ export class BubbleShooterScene implements Scene {
 
   private showResult(state: 'won' | 'lost') {
     this.gameState = state
-
-    const cx     = this.screenW / 2
-    const panelW = 300
-    const panelH = 230
-    const px     = cx - panelW / 2
-    const py     = this.screenH / 2 - panelH / 2
-    const accent = state === 'won' ? 0xff6eb4 : 0xe74c3c
-
-    // Full-screen dim
-    const bg = new Graphics()
-    bg.rect(0, 0, this.screenW, this.screenH).fill({ color: 0x000000 })
-    bg.alpha = 0
-
-    // Result card
-    const card = new Graphics()
-    card.roundRect(px, py, panelW, panelH, 10).fill({ color: 0x07111a })
-    card.roundRect(px, py, panelW, panelH, 10).stroke({ color: accent, width: 2, alpha: 0.85 })
-
-    const resultLbl = new Text({
-      text: state === 'won' ? T.bubble.win : T.bubble.gameOver,
-      style: { fill: accent, fontSize: 20, fontFamily: HUD_FONT },
-    })
-    resultLbl.anchor.set(0.5)
-    resultLbl.x = cx
-    resultLbl.y = py + 46
-
-    const scoreLbl = new Text({
-      text: T.bubble.score,
-      style: { fill: 0x6699aa, fontSize: 9, fontFamily: HUD_FONT },
-    })
-    scoreLbl.anchor.set(0.5)
-    scoreLbl.x = cx
-    scoreLbl.y = py + 95
-
-    const scoreVal = new Text({
-      text: String(this.score),
-      style: { fill: 0xffffff, fontSize: 18, fontFamily: HUD_FONT },
-    })
-    scoreVal.anchor.set(0.5)
-    scoreVal.x = cx
-    scoreVal.y = py + 120
-
-    // "Play Again" button
-    const btn = new Container()
-    btn.eventMode = 'static'
-    btn.cursor    = 'pointer'
-    const btnBg = new Graphics()
-    btnBg.roundRect(-90, -17, 180, 34, 7).fill({ color: accent })
-    const btnLbl = new Text({
-      text: T.leaderboard.playAgain,
-      style: { fill: 0x07111a, fontSize: 10, fontFamily: HUD_FONT },
-    })
-    btnLbl.anchor.set(0.5)
-    btn.addChild(btnBg, btnLbl)
-    btn.x = cx
-    btn.y = py + 165
-    btn.on('pointerdown', () => window.location.reload())
-    btn.on('pointerover', () => gsap.to(btn.scale, { x: 1.07, y: 1.07, duration: 0.1 }))
-    btn.on('pointerout',  () => gsap.to(btn.scale, { x: 1,    y: 1,    duration: 0.12 }))
-
-    const hint = new Text({
-      text: T.leaderboard.restartHint,
-      style: { fill: 0x334455, fontSize: 7, fontFamily: HUD_FONT },
-    })
-    hint.anchor.set(0.5)
-    hint.x = cx
-    hint.y = py + 208
-
-    this.overlayLayer.addChild(bg, card, resultLbl, scoreLbl, scoreVal, btn, hint)
-
-    gsap.to(bg, { alpha: 0.78, duration: 0.4, ease: 'power2.out' })
-    gsap.from(card.scale, { x: 0.85, y: 0.85, duration: 0.35, ease: 'back.out(1.5)', delay: 0.1 })
-    gsap.from(resultLbl, { alpha: 0, y: resultLbl.y - 12, duration: 0.3, delay: 0.25 })
-    gsap.from(btn,       { alpha: 0, y: btn.y + 8,        duration: 0.3, delay: 0.35 })
+    this.onGameOver?.(this.score, state)
   }
 
   private animateDrop(cells: { col: number; row: number }[]) {

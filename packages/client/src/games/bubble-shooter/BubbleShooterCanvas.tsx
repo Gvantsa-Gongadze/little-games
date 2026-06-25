@@ -1,9 +1,20 @@
-import { useEffect, useRef } from 'react'
-import { Application }        from 'pixi.js'
-import { BubbleShooterScene } from './scenes/BubbleShooterScene'
+import { useEffect, useRef, useState } from 'react'
+import { Application }               from 'pixi.js'
+import { BubbleShooterScene }        from './scenes/BubbleShooterScene'
+import { BubbleLeaderboardOverlay }  from './BubbleLeaderboardOverlay'
 
-export default function BubbleShooterCanvas() {
-  const mountRef = useRef<HTMLDivElement>(null)
+interface Props {
+  onGameOver?: (score: number, state: 'won' | 'lost') => void
+}
+
+export default function BubbleShooterCanvas({ onGameOver }: Props) {
+  const mountRef      = useRef<HTMLDivElement>(null)
+  const onGameOverRef = useRef(onGameOver)
+  const [gameOver, setGameOver] = useState<{ score: number; state: 'won' | 'lost' } | null>(null)
+
+  useEffect(() => {
+    onGameOverRef.current = onGameOver
+  })
 
   useEffect(() => {
     const app     = new Application()
@@ -31,7 +42,10 @@ export default function BubbleShooterCanvas() {
       if (!mountRef.current) return
       mountRef.current.appendChild(app.canvas)
 
-      const scene = new BubbleShooterScene(app)
+      const scene = new BubbleShooterScene(app, (score, state) => {
+        onGameOverRef.current?.(score, state)
+        setGameOver({ score, state })
+      })
       app.stage.addChild(scene.view)
       app.ticker.add(ticker => scene.update(ticker.deltaTime))
 
@@ -48,5 +62,16 @@ export default function BubbleShooterCanvas() {
     }
   }, [])
 
-  return <div ref={mountRef} style={{ width: '100vw', height: '100vh' }} />
+  return (
+    <div style={{ position: 'relative', width: '100vw', height: '100vh' }}>
+      <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
+      {gameOver !== null && (
+        <BubbleLeaderboardOverlay
+          score={gameOver.score}
+          state={gameOver.state}
+          onRestart={() => window.location.reload()}
+        />
+      )}
+    </div>
+  )
 }

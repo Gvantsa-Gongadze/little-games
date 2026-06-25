@@ -13,20 +13,24 @@ export class GridManager {
 
   private startX: number
   private startY: number
+  // Tracks hex-row parity offset. Flips on every addTopRow so that existing rows
+  // maintain their correct column count and x-offset after each board advance.
+  private rowPhase = 0
 
   constructor(startX: number, startY: number) {
     this.startX = startX
     this.startY = startY
   }
 
-  // Odd rows are offset by half a bubble, so they hold one fewer column
+  // Rows alternate between COLS (11) and COLS-1 (10) columns.
+  // rowPhase shifts which physical row indices map to which logical parity.
   colsInRow(row: number): number {
-    return row % 2 === 0 ? COLS : COLS - 1
+    return (row + this.rowPhase) % 2 === 0 ? COLS : COLS - 1
   }
 
   // Convert grid coordinates → pixel centre
   cellToPixel(col: number, row: number): { x: number; y: number } {
-    const offset = row % 2 === 1 ? BUBBLE_RADIUS : 0
+    const offset = (row + this.rowPhase) % 2 === 1 ? BUBBLE_RADIUS : 0
     return {
       x: this.startX + col * COL_SPACING + offset,
       y: this.startY + row * ROW_SPACING,
@@ -37,7 +41,7 @@ export class GridManager {
   pixelToCell(px: number, py: number): { col: number; row: number } {
     const row = Math.round((py - this.startY) / ROW_SPACING)
     const r   = Math.max(0, row)
-    const offset = r % 2 === 1 ? BUBBLE_RADIUS : 0
+    const offset = (r + this.rowPhase) % 2 === 1 ? BUBBLE_RADIUS : 0
     const col = Math.round((px - this.startX - offset) / COL_SPACING)
     return { col: Math.max(0, Math.min(col, this.colsInRow(r) - 1)), row: r }
   }
@@ -71,7 +75,7 @@ export class GridManager {
   // Returns the up-to-6 valid adjacent cells for a hex offset grid.
   // Even rows are unshifted; odd rows are shifted right by BUBBLE_RADIUS.
   getHexNeighbors(col: number, row: number): { col: number; row: number }[] {
-    const isOdd = row % 2 === 1
+    const isOdd = (row + this.rowPhase) % 2 === 1
     const candidates = [
       { col: col - 1, row },                                   // left
       { col: col + 1, row },                                   // right
@@ -312,6 +316,12 @@ export class GridManager {
     for (let r = oldLength - 1; r >= 0; r--) {
       this.grid[r + 1] = this.grid[r]
     }
+
+    // Flip parity so all shifted rows keep their correct column count and x-offset.
+    // Every existing row moves from index r to r+1, flipping its physical parity.
+    // Incrementing rowPhase compensates so colsInRow/cellToPixel still return the
+    // same values for each row's data (e.g. 11-col rows stay 11-col, 10-col stay 10-col).
+    this.rowPhase = (this.rowPhase + 1) % 2
 
     // Reposition all shifted bubbles to their new (row+1) pixel positions
     for (let r = 1; r <= oldLength; r++) {
