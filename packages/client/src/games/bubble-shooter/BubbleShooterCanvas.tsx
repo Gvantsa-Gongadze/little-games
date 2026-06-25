@@ -10,9 +10,8 @@ interface Props {
   onGameOver?: (score: number, state: 'won' | 'lost') => void
 }
 
-// How many colors to keep pre-fetched in the queue
-const QUEUE_TARGET    = 20
-const REFILL_AT       = 10   // request more when fewer than this many remain
+const QUEUE_TARGET = 20
+const REFILL_AT    = 8
 
 export default function BubbleShooterCanvas({ onGameOver }: Props) {
   const mountRef      = useRef<HTMLDivElement>(null)
@@ -25,53 +24,57 @@ export default function BubbleShooterCanvas({ onGameOver }: Props) {
 
   useEffect(() => {
     const app = new Application()
-    let destroyed  = false
-    let initDone   = false
-    let onResize:  (() => void) | null = null
-    let room:      Room | null = null
+    let destroyed = false
+    let initDone  = false
+    let onResize: (() => void) | null = null
+    let room: Room | null = null
 
     async function init() {
-      // Join the server room first — it pre-seeds the color queue before we
-      // create the scene so getNextColor never has to wait.
       room = await joinBubbleShooterRoom()
       if (destroyed) { room.leave(); return }
 
-      await app.init({
-        background:  '#0a0a1a',
-        antialias:   true,
-        width:       window.innerWidth,
-        height:      window.innerHeight,
-        resolution:  window.devicePixelRatio || 1,
-        autoDensity: true,
+      // Plain local array — filled by 'colors' messages from the server.
+      // No Colyseus schema decoding needed; server sends plain string arrays.
+      const colorQueue: BubbleColor[] = []
+      let scene: BubbleShooterScene | null = null
+      let resolveInitial: (() => void) | null = null
+
+      room.onMessage('colors', (batch: string[]) => {
+        colorQueue.push(...(batch as BubbleColor[]))
+        // Unblock the scene-creation await on the very first response
+        if (resolveInitial) { resolveInitial(); resolveInitial = null }
       })
 
+      // Fetch initial batch and init Pixi in parallel to minimise startup time
+      const colorsReady = new Promise<void>(resolve => {
+        resolveInitial = resolve
+        room!.send('request_colors', { count: QUEUE_TARGET, boardColors: [] })
+      })
+
+      await Promise.all([
+        app.init({
+          background:  '#0a0a1a',
+          antialias:   true,
+          width:       window.innerWidth,
+          height:      window.innerHeight,
+          resolution:  window.devicePixelRatio || 1,
+          autoDensity: true,
+        }),
+        colorsReady,
+      ])
+
       initDone = true
-
-      if (destroyed) {
-        app.destroy(true)
-        return
-      }
-
+      if (destroyed) { app.destroy(true); return }
       if (!mountRef.current) return
       mountRef.current.appendChild(app.canvas)
 
-      // colorIndex is the local read pointer into the server-synced queue array.
-      // The server only appends to the queue; we never mutate it client-side.
-      let colorIndex = 0
-      let scene: BubbleShooterScene | null = null
-
       const getNextColor = (): BubbleColor => {
-        const color = (room!.state.colorQueue[colorIndex] as BubbleColor) ?? 'blue'
-        colorIndex++
-
-        // Ask the server to replenish whenever the look-ahead buffer runs low.
-        const remaining = room!.state.colorQueue.length - colorIndex
-        if (remaining < REFILL_AT) {
+        // Refill whenever the look-ahead buffer drops below the threshold
+        if (colorQueue.length < REFILL_AT) {
           const boardColors = scene?.grid.getBoardColors() ?? []
-          room!.send('refill', { count: QUEUE_TARGET - remaining, boardColors })
+          room!.send('request_colors', { count: QUEUE_TARGET, boardColors })
         }
-
-        return color
+        return colorQueue.shift() ?? 'blue'
       }
 
       scene = new BubbleShooterScene(app, getNextColor, (score, state) => {
