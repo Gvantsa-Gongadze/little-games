@@ -33,6 +33,12 @@ export class BubbleShooterScene implements Scene {
   private score          = 0
   private scoreText:     Text
 
+  private gameState:    'playing' | 'won' | 'lost' = 'playing'
+  private overlayLayer  = new Container()
+  private screenW:      number
+  private screenH:      number
+  private dangerY:      number
+
   private launcherX: number
   private launcherY: number
   private wallLeft:  number   // left bounce wall  = left edge of grid
@@ -42,12 +48,16 @@ export class BubbleShooterScene implements Scene {
 
   private boundMouseMove: (e: MouseEvent) => void
   private boundClick:     (e: MouseEvent) => void
+  private boundKeyDown:   (e: KeyboardEvent) => void
 
   constructor(app: Application) {
     const W = app.screen.width
     const H = app.screen.height
+    this.screenW   = W
+    this.screenH   = H
     this.launcherX = W / 2
     this.launcherY = H - LAUNCHER_Y_OFFSET
+    this.dangerY   = this.launcherY - BUBBLE_RADIUS * 4
 
     // Grid — centred horizontally
     const gridPixelWidth = COLS * COL_SPACING   // 440 px for 11 cols
@@ -70,10 +80,11 @@ export class BubbleShooterScene implements Scene {
     this.nextBubble.view.x = this.launcherX + 65
     this.nextBubble.view.y = this.launcherY
 
-    // Playfield wall lines (visual guides matching bounce walls)
+    // Playfield wall lines + danger line (visual guides)
     const walls = new Graphics()
     walls.moveTo(this.wallLeft,  GRID_TOP_PAD).lineTo(this.wallLeft,  H - 36).stroke({ color: 0x3388aa, alpha: 0.25, width: 1 })
     walls.moveTo(this.wallRight, GRID_TOP_PAD).lineTo(this.wallRight, H - 36).stroke({ color: 0x3388aa, alpha: 0.25, width: 1 })
+    walls.moveTo(this.wallLeft,  this.dangerY).lineTo(this.wallRight, this.dangerY).stroke({ color: 0xff4444, alpha: 0.45, width: 1.5 })
 
     // Bottom platform bar
     const bar = new Graphics()
@@ -121,13 +132,19 @@ export class BubbleShooterScene implements Scene {
 
     hudLayer.addChild(panelBg, scoreLbl, this.scoreText)
 
-    this.view.addChild(this.gridLayer, this.flightLayer, this.dropLayer, walls, bar, this.launcherLayer, hudLayer)
+    this.view.addChild(
+      this.gridLayer, this.flightLayer, this.dropLayer,
+      walls, bar, this.launcherLayer, hudLayer,
+      this.overlayLayer,
+    )
 
-    // Pointer events
+    // Pointer + keyboard events
     this.boundMouseMove = (e) => this.handleAim(e.clientX, e.clientY)
     this.boundClick     = (e) => this.handleFire(e.clientX, e.clientY)
+    this.boundKeyDown   = (e) => { if (e.code === 'KeyR' && this.gameState !== 'playing') window.location.reload() }
     window.addEventListener('mousemove', this.boundMouseMove)
     window.addEventListener('click',     this.boundClick)
+    window.addEventListener('keydown',   this.boundKeyDown)
 
   }
 
@@ -152,6 +169,7 @@ export class BubbleShooterScene implements Scene {
   }
 
   private handleAim(mx: number, my: number) {
+    if (this.gameState !== 'playing') return
     if (my >= this.launcherY) return
     this.aimAngle = this.toAimAngle(mx, my)
     this.launcher.setAngle(this.aimAngle)
@@ -159,6 +177,7 @@ export class BubbleShooterScene implements Scene {
   }
 
   private handleFire(mx: number, my: number) {
+    if (this.gameState !== 'playing') return
     if (this.inFlight) return    // one bubble in the air at a time
     if (my >= this.launcherY) return
 
@@ -290,7 +309,91 @@ export class BubbleShooterScene implements Scene {
       const floating = this.grid.findFloating()
       if (floating.length > 0) this.addScore(floating.length * 20)
       this.animateDrop(floating)
+
+      // Win: board fully cleared
+      if (this.grid.isEmpty()) { this.showResult('won'); return }
     }
+
+    // Lose: any bubble has reached or crossed the danger line
+    if (this.grid.hasBubbleBelowY(this.dangerY)) this.showResult('lost')
+  }
+
+  private showResult(state: 'won' | 'lost') {
+    this.gameState = state
+
+    const cx     = this.screenW / 2
+    const panelW = 300
+    const panelH = 230
+    const px     = cx - panelW / 2
+    const py     = this.screenH / 2 - panelH / 2
+    const accent = state === 'won' ? 0xff6eb4 : 0xe74c3c
+
+    // Full-screen dim
+    const bg = new Graphics()
+    bg.rect(0, 0, this.screenW, this.screenH).fill({ color: 0x000000 })
+    bg.alpha = 0
+
+    // Result card
+    const card = new Graphics()
+    card.roundRect(px, py, panelW, panelH, 10).fill({ color: 0x07111a })
+    card.roundRect(px, py, panelW, panelH, 10).stroke({ color: accent, width: 2, alpha: 0.85 })
+
+    const resultLbl = new Text({
+      text: state === 'won' ? T.bubble.win : T.bubble.gameOver,
+      style: { fill: accent, fontSize: 20, fontFamily: HUD_FONT },
+    })
+    resultLbl.anchor.set(0.5)
+    resultLbl.x = cx
+    resultLbl.y = py + 46
+
+    const scoreLbl = new Text({
+      text: T.bubble.score,
+      style: { fill: 0x6699aa, fontSize: 9, fontFamily: HUD_FONT },
+    })
+    scoreLbl.anchor.set(0.5)
+    scoreLbl.x = cx
+    scoreLbl.y = py + 95
+
+    const scoreVal = new Text({
+      text: String(this.score),
+      style: { fill: 0xffffff, fontSize: 18, fontFamily: HUD_FONT },
+    })
+    scoreVal.anchor.set(0.5)
+    scoreVal.x = cx
+    scoreVal.y = py + 120
+
+    // "Play Again" button
+    const btn = new Container()
+    btn.eventMode = 'static'
+    btn.cursor    = 'pointer'
+    const btnBg = new Graphics()
+    btnBg.roundRect(-90, -17, 180, 34, 7).fill({ color: accent })
+    const btnLbl = new Text({
+      text: T.leaderboard.playAgain,
+      style: { fill: 0x07111a, fontSize: 10, fontFamily: HUD_FONT },
+    })
+    btnLbl.anchor.set(0.5)
+    btn.addChild(btnBg, btnLbl)
+    btn.x = cx
+    btn.y = py + 165
+    btn.on('pointerdown', () => window.location.reload())
+    btn.on('pointerover', () => gsap.to(btn.scale, { x: 1.07, y: 1.07, duration: 0.1 }))
+    btn.on('pointerout',  () => gsap.to(btn.scale, { x: 1,    y: 1,    duration: 0.12 }))
+
+    const hint = new Text({
+      text: T.leaderboard.restartHint,
+      style: { fill: 0x334455, fontSize: 7, fontFamily: HUD_FONT },
+    })
+    hint.anchor.set(0.5)
+    hint.x = cx
+    hint.y = py + 208
+
+    this.overlayLayer.addChild(bg, card, resultLbl, scoreLbl, scoreVal, btn, hint)
+
+    gsap.to(bg, { alpha: 0.78, duration: 0.4, ease: 'power2.out' })
+    gsap.from(card.scale, { x: 0.85, y: 0.85, duration: 0.35, ease: 'back.out(1.5)', delay: 0.1 })
+    gsap.from(resultLbl, { alpha: 0, y: resultLbl.y - 12, duration: 0.3, delay: 0.25 })
+    gsap.from(btn,       { alpha: 0, y: btn.y + 8,        duration: 0.3, delay: 0.35 })
   }
 
   private animateDrop(cells: { col: number; row: number }[]) {
@@ -323,6 +426,7 @@ export class BubbleShooterScene implements Scene {
   destroy() {
     window.removeEventListener('mousemove', this.boundMouseMove)
     window.removeEventListener('click',     this.boundClick)
+    window.removeEventListener('keydown',   this.boundKeyDown)
     this.view.destroy({ children: true })
   }
 }

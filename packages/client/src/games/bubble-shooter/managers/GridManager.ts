@@ -97,8 +97,16 @@ export class GridManager {
     let bestDist  = Infinity
 
     for (const c of candidates) {
+      // Skip occupied cells
       const cell = this.grid[c.row]?.[c.col]
-      if (cell && cell.bubble !== null) continue   // occupied — skip
+      if (cell && cell.bubble !== null) continue
+
+      // Only snap to the ceiling row or to a cell adjacent to an existing bubble.
+      // Without this, bubbles fired through empty columns float in mid-air.
+      const attachedToCeiling  = c.row === 0
+      const adjacentToOccupied = this.getHexNeighbors(c.col, c.row)
+        .some(n => this.grid[n.row]?.[n.col]?.bubble)
+      if (!attachedToCeiling && !adjacentToOccupied) continue
 
       const { x, y } = this.cellToPixel(c.col, c.row)
       const dist = Math.hypot(px - x, py - y)
@@ -203,6 +211,16 @@ export class GridManager {
     }
     if (colors.size === 0) return Object.keys(COLOR_HEX) as BubbleColor[]
     return [...colors]
+  }
+
+  hasBubbleBelowY(thresholdY: number): boolean {
+    for (let r = 0; r < this.grid.length; r++) {
+      if (!this.grid[r]) continue
+      for (let c = 0; c < this.grid[r].length; c++) {
+        if (this.grid[r][c]?.bubble && this.cellToPixel(c, r).y >= thresholdY) return true
+      }
+    }
+    return false
   }
 
   isEmpty(): boolean {

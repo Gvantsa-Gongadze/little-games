@@ -252,6 +252,7 @@ COLOR_HEX         = { red: 0xe74c3c, blue: 0x3498db, green: 0x2ecc71,
 | `walls` + `bar` | Playfield wall lines + bottom platform (static Graphics) |
 | `launcherLayer` | Aim guide + launcher visual + current bubble + "NEXT" label + next bubble preview |
 | `hudLayer` | Score panel fixed to top-right of screen (above grid, on top of all layers) |
+| `overlayLayer` | Win/lose result card + dim background — rendered last (topmost) |
 
 Key fields:
 - `wallLeft` / `wallRight` — x-coordinates of the grid's left and right edges (`startX - BUBBLE_RADIUS` and `startX - BUBBLE_RADIUS + gridPixelWidth`). Bounce walls are the **grid edges**, not the screen edges — this keeps fired bubbles inside the grid's column range at all times.
@@ -259,6 +260,9 @@ Key fields:
 - `nextBubble` — preview bubble rendered 65 px to the right of the launcher center, with a "NEXT" label (`T.bubble.next`) above it. Both live in `launcherLayer`.
 - `score` — running integer score (starts at 0).
 - `scoreText` — Pixi `Text` node inside `hudLayer`; updated and scale-bumped by `addScore()`.
+- `gameState` — `'playing' | 'won' | 'lost'`; starts `'playing'`. `handleAim` and `handleFire` both guard on this so the launcher freezes on result.
+- `dangerY` — pixel y-coordinate of the danger line (`launcherY - BUBBLE_RADIUS * 4`). A red line is drawn here in the `walls` Graphics. Any bubble whose grid y ≥ `dangerY` after landing triggers a loss.
+- `screenW` / `screenH` — stored from `app.screen` so `showResult()` can centre the overlay without needing `app` later.
 
 Key behaviours:
 - **Color sampling** (`sampleColor()`): calls `grid.getBoardColors()` and picks a random color from that set. Only colors currently present on the board are ever spawned — prevents unwinnable situations where the player holds a color that no longer exists on the grid. Falls back to all 6 colors if the board is empty.
@@ -268,12 +272,13 @@ Key behaviours:
 - **Aim guide** (`drawAimGuide`): traces dots every 16 px from barrel tip, simulating wall bounces against `wallLeft`/`wallRight`, fading out over 38 steps. Stops at `GRID_TOP_PAD`. Only called from `update()`, never from event handlers.
 - **Physics** (`update(delta)`): advances position; reflects `vx` off `wallLeft` / `wallRight` using `Math.abs` (prevents tunnelling).
 - **Landing triggers**: `shouldLand = true` when (a) `y - BUBBLE_RADIUS ≤ GRID_TOP_PAD` (top boundary), OR (b) any nearby occupied grid cell is within `2 × BUBBLE_RADIUS` of the bubble centre (checks `pixelToCell` + 6 hex neighbours each frame).
-- **`landBubble(bubble, px, py)`**: removes bubble from `flightLayer`, calls `grid.findSnapCell()`, places bubble at snapped cell, runs `findCluster()` — if ≥ 3 same-colour bubbles, pops all of them (instant `removeBubble`) then calls `findFloating()` + `animateDrop()` for disconnected bubbles. Discards bubble if no empty snap cell found.
+- **`landBubble(bubble, px, py)`**: removes bubble from `flightLayer`, calls `grid.findSnapCell()`, places bubble at snapped cell, runs `findCluster()` — if ≥ 3 same-colour bubbles, pops all of them (instant `removeBubble`) then calls `findFloating()` + `animateDrop()` for disconnected bubbles. Discards bubble if no empty snap cell found. After every landing checks win (`grid.isEmpty()`) and lose (`grid.hasBubbleBelowY(dangerY)`).
+- **Win/lose** (`showResult(state)`): sets `gameState`, builds a centred result card (300 × 230 px, `roundRect`, accent-coloured border) over a full-screen dim (`alpha 0 → 0.78`). Shows `T.bubble.win` / `T.bubble.gameOver` in accent colour, final score, a "PLAY AGAIN" Pixi button (`eventMode = 'static'`, hover scale via GSAP, `pointerdown → window.location.reload()`), and "OR PRESS R" hint. Card and result label both animate in via GSAP. R key (`boundKeyDown`) also reloads when `gameState !== 'playing'`.
 - **`animateDrop(cells)`**: for each floating cell calls `grid.extractBubble()` (keeps view alive), moves view into `dropLayer`, then runs a GSAP tween — falls 520 px with `power2.in` easing, fades to alpha 0, slight random horizontal drift (±20 px) and stagger delay (0–80 ms) per bubble so cascades look natural. `onComplete` removes and destroys the view.
 - **Scoring** (`addScore(points)`): adds to `this.score`, updates `scoreText.text`, fires a GSAP scale-bounce (`1.35 → 1.0`, 220 ms, `back.out`) so the number visually pops. Called twice per pop event — `cluster.length × 10` pts for the matched cluster, then `floating.length × 20` pts for any disconnected bubbles that drop.
 - **HUD panel**: right-anchored `Text` objects (`anchor.set(1, 0)`) at `x = W - 14` so the score grows leftward as digits increase. "SCORE" label at 9 px (`#6699aa`), value at 15 px (`#ff6eb4`, game accent pink). Dark near-black background rect (`W - 190` to `W`, full `GRID_TOP_PAD` height) with left + bottom border strokes for definition.
 - **One bubble in the air at a time** — `handleFire` returns early if `inFlight` is not null.
-- `destroy()` removes both `mousemove` and `click` listeners.
+- `destroy()` removes `mousemove`, `click`, and `keydown` listeners.
 
 **`entities/Bubble.ts`**
 - `Bubble(color)` draws three layers: filled body circle, specular highlight (upper-left, `alpha 0.28`), rim stroke (`alpha 0.25`).
@@ -292,12 +297,13 @@ Key behaviours:
 - **`place(col, row, bubble)`** → positions bubble view and adds to `container`. Creates the row array if it doesn't exist yet (handles bubbles landing below the initial grid).
 - **`populate(layout)`** → fills grid from a 2-D `BubbleColor | null` array.
 - **`getHexNeighbors(col, row)`** → up to 6 adjacent cells using offset-row formula: even rows shift col by −1 for upper/lower-left; odd rows shift col by +1 for upper/lower-right. Filters to valid grid bounds.
-- **`findSnapCell(px, py)`** → nearest empty cell among primary + 6 neighbours; treats uninitialised rows as empty so bubbles can extend the grid downward. Returns `null` if all candidates are occupied.
+- **`findSnapCell(px, py)`** → nearest empty cell among primary + 6 neighbours that is **connected to the grid** — candidate must be row 0 (ceiling) OR have at least one occupied hex neighbour. Returns `null` if no connected empty cell found. This prevents bubbles fired through gaps from floating in mid-air: a bubble that reaches the top through an empty column with no row-0 bubble nearby is discarded.
 - **`findCluster(col, row)`** → BFS flood-fill collecting all same-colour connected cells from the given position.
 - **`findFloating()`** → BFS seeded from every occupied cell in row 0; returns all occupied cells NOT reachable from the top (disconnected after a pop).
 - **`removeBubble(col, row)`** → removes Pixi view, destroys it, nulls the cell. Used for instant removal (popped cluster).
 - **`extractBubble(col, row)`** → removes bubble from grid state and grid container but returns the `Bubble` object alive so the caller can animate it. Used by `animateDrop`.
 - **`getBoardColors()`** → scans all occupied cells, returns a deduplicated `BubbleColor[]` of every color currently on the board. Falls back to all 6 colors if the board is empty. Used by `sampleColor()` in the scene to ensure the launcher never produces a color that can't match anything.
+- **`hasBubbleBelowY(thresholdY)`** → `true` if any occupied cell's pixel y ≥ `thresholdY`. Used after each landing to detect the lose condition (bubble reached the danger line).
 - **`isEmpty()`** → `true` if no bubble remains in the grid (win condition).
 
 **`data/levels.ts`**
@@ -418,7 +424,7 @@ Auth: Email provider enabled. Username stored in `auth.users.user_metadata.usern
 | Bubble Shooter — match & pop | ✓ `findCluster` BFS pops clusters of 3+ |
 | Bubble Shooter — floating drop | ✓ `findFloating` + `animateDrop`: disconnected bubbles fall with GSAP gravity animation |
 | Bubble Shooter — scoring | ✓ `addScore()` — cluster pop ×10 pts, floating drop ×20 pts; HUD panel top-right with scale-bounce animation |
-| Bubble Shooter — win / lose | No win (board clear) or lose (bubble crosses danger line) condition yet |
+| Bubble Shooter — win / lose | ✓ Win on `grid.isEmpty()`; lose on `hasBubbleBelowY(dangerY)`; result overlay with GSAP animation and "PLAY AGAIN" button |
 | Bubble Shooter — next preview | ✓ `nextBubble` rendered at `launcherX + 65` with "NEXT" label; queue advances on every fire |
 | Bubble Shooter — colour sampling | ✓ `sampleColor()` calls `getBoardColors()` — only spawns colors present on the board |
 | Bubble Shooter — board pressure | Optional advancing rows not yet implemented |
