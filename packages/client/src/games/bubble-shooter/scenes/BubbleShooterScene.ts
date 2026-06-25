@@ -413,7 +413,7 @@ export class BubbleShooterScene implements Scene {
     if (this.grid.hasBubbleBelowY(this.dangerY)) this.showResult('lost')
   }
 
-  private handleLightningEffect(col: number, row: number) {
+  private handleLightningEffect(_col: number, row: number) {
     const targets = this.grid.getCellsInRow(row)
     this.addScore(targets.length * 15)
     for (const t of targets) this.grid.removeBubble(t.col, t.row)
