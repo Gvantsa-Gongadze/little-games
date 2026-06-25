@@ -44,5 +44,12 @@
   },
   "arena2d": {
     "pressSpace": "Press SPACE to play"
+  },
+  "bubble": {
+    "pressSpace": "Press SPACE to play",
+    "gameOver": "GAME OVER",
+    "win": "YOU WIN!",
+    "score": "SCORE",
+    "next": "NEXT"
   }
 }

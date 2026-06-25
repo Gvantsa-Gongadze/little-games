@@ -3,6 +3,7 @@ import Home from '@/pages/Home'
 import Game from '@/pages/Game'
 import Game3D from '@/pages/Game3D'
 import AsteroidsPage from '@/pages/Asteroids'
+import BubbleShooterPage from '@/pages/BubbleShooter'
 
 export default function App() {
   return (
@@ -13,6 +14,7 @@ export default function App() {
         <Route path="/game" element={<Game />} />
         <Route path="/game3d" element={<Game3D />} />
         <Route path="/asteroids" element={<AsteroidsPage />} />
+        <Route path="/bubble-shooter" element={<BubbleShooterPage />} />
       </Routes>
     </BrowserRouter>
   )

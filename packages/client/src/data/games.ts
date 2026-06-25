@@ -3,7 +3,7 @@ export interface GameMeta {
   title: string
   description: string
   route: string
-  tag: '2D' | '3D'
+  tag: '2D' | '3D' | 'ARCADE' | 'CLASSIC'
   accent: string
   emoji: string
 }
@@ -26,6 +26,15 @@ export const GAMES: GameMeta[] = [
     tag: '3D',
     accent: '#a78bfa',
     emoji: '🟪',
+  },
+  {
+    id: 'bubble-shooter',
+    title: 'Bubble Shooter',
+    description: 'Pop bubbles, clear the board.',
+    route: '/bubble-shooter',
+    tag: 'ARCADE',
+    accent: '#ff6eb4',
+    emoji: '🫧',
   },
   {
     id: 'asteroids',
