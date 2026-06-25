@@ -182,6 +182,17 @@ export class GridManager {
     cell.bubble = null
   }
 
+  // Removes the bubble from grid state and the grid container but keeps the
+  // Bubble object alive so the caller can animate it before destroying.
+  extractBubble(col: number, row: number): Bubble | null {
+    const cell = this.grid[row]?.[col]
+    if (!cell?.bubble) return null
+    const bubble = cell.bubble
+    cell.bubble = null
+    this.container.removeChild(bubble.view)
+    return bubble
+  }
+
   isEmpty(): boolean {
     for (const row of this.grid) {
       if (!row) continue

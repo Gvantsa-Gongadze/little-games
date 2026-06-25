@@ -247,6 +247,7 @@ COLOR_HEX         = { red: 0xe74c3c, blue: 0x3498db, green: 0x2ecc71,
 |---|---|
 | `gridLayer` | Static grid bubbles (via `grid.container`) |
 | `flightLayer` | In-flight bubble while travelling |
+| `dropLayer` | Floating bubbles mid-fall animation |
 | `walls` + `bar` | Playfield wall lines + bottom platform (static Graphics) |
 | `launcherLayer` | Aim guide + launcher visual + preview bubble |
 
@@ -259,7 +260,8 @@ Key behaviours:
 - **Aim guide** (`drawAimGuide`): traces dots every 16 px from barrel tip, simulating wall bounces against `wallLeft`/`wallRight`, fading out over 38 steps. Stops at `GRID_TOP_PAD`.
 - **Physics** (`update(delta)`): advances position; reflects `vx` off `wallLeft` / `wallRight` using `Math.abs` (prevents tunnelling).
 - **Landing triggers**: `shouldLand = true` when (a) `y - BUBBLE_RADIUS ≤ GRID_TOP_PAD` (top boundary), OR (b) any nearby occupied grid cell is within `2 × BUBBLE_RADIUS` of the bubble centre (checks `pixelToCell` + 6 hex neighbours each frame).
-- **`landBubble(bubble, px, py)`**: removes bubble from `flightLayer`, calls `grid.findSnapCell()`, places bubble at snapped cell, runs `findCluster()` — if ≥ 3 same-colour bubbles, pops all of them then calls `findFloating()` to drop disconnected bubbles. Discards bubble if no empty snap cell found.
+- **`landBubble(bubble, px, py)`**: removes bubble from `flightLayer`, calls `grid.findSnapCell()`, places bubble at snapped cell, runs `findCluster()` — if ≥ 3 same-colour bubbles, pops all of them (instant `removeBubble`) then calls `findFloating()` + `animateDrop()` for disconnected bubbles. Discards bubble if no empty snap cell found.
+- **`animateDrop(cells)`**: for each floating cell calls `grid.extractBubble()` (keeps view alive), moves view into `dropLayer`, then runs a GSAP tween — falls 520 px with `power2.in` easing, fades to alpha 0, slight random horizontal drift (±20 px) and stagger delay (0–80 ms) per bubble so cascades look natural. `onComplete` removes and destroys the view.
 - **One bubble in the air at a time** — `handleFire` returns early if `inFlight` is not null.
 - `destroy()` removes both `mousemove` and `click` listeners.
 
@@ -283,7 +285,8 @@ Key behaviours:
 - **`findSnapCell(px, py)`** → nearest empty cell among primary + 6 neighbours; treats uninitialised rows as empty so bubbles can extend the grid downward. Returns `null` if all candidates are occupied.
 - **`findCluster(col, row)`** → BFS flood-fill collecting all same-colour connected cells from the given position.
 - **`findFloating()`** → BFS seeded from every occupied cell in row 0; returns all occupied cells NOT reachable from the top (disconnected after a pop).
-- **`removeBubble(col, row)`** → removes Pixi view, destroys it, nulls the cell.
+- **`removeBubble(col, row)`** → removes Pixi view, destroys it, nulls the cell. Used for instant removal (popped cluster).
+- **`extractBubble(col, row)`** → removes bubble from grid state and grid container but returns the `Bubble` object alive so the caller can animate it. Used by `animateDrop`.
 - **`isEmpty()`** → `true` if no bubble remains in the grid (win condition).
 
 **`data/levels.ts`**
@@ -402,7 +405,7 @@ Auth: Email provider enabled. Username stored in `auth.users.user_metadata.usern
 | Shared types usage | `IGameState`/`PlayerState` in `packages/shared` unused |
 | Bubble Shooter — grid snap | ✓ `findSnapCell` + `place` wire up on landing |
 | Bubble Shooter — match & pop | ✓ `findCluster` BFS pops clusters of 3+ |
-| Bubble Shooter — floating drop | ✓ `findFloating` BFS drops disconnected bubbles after each pop |
+| Bubble Shooter — floating drop | ✓ `findFloating` + `animateDrop`: disconnected bubbles fall with GSAP gravity animation |
 | Bubble Shooter — scoring | No score tracking or HUD yet |
 | Bubble Shooter — win / lose | No win (board clear) or lose (bubble crosses danger line) condition yet |
 | Bubble Shooter — next preview | `currentBubble` shows at launcher but no separate "next" display yet |

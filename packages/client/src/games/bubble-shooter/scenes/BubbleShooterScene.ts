@@ -1,4 +1,5 @@
 import { Application, Container, Graphics } from 'pixi.js'
+import { gsap } from 'gsap'
 import type { Scene } from '@/engine/SceneManager'
 import { GridManager } from '../managers/GridManager'
 import { Launcher }    from '../entities/Launcher'
@@ -21,6 +22,7 @@ export class BubbleShooterScene implements Scene {
   // rendering layers (back → front)
   private gridLayer     = new Container()
   private flightLayer   = new Container()
+  private dropLayer     = new Container()   // falling bubbles after disconnect
   private launcherLayer = new Container()
 
   private grid:     GridManager
@@ -78,7 +80,7 @@ export class BubbleShooterScene implements Scene {
     // Launcher layer: aim guide behind launcher, preview bubble in front
     this.launcherLayer.addChild(this.aimGuide, this.launcher.view, this.currentBubble.view)
 
-    this.view.addChild(this.gridLayer, this.flightLayer, walls, bar, this.launcherLayer)
+    this.view.addChild(this.gridLayer, this.flightLayer, this.dropLayer, walls, bar, this.launcherLayer)
 
     // Pointer events
     this.boundMouseMove = (e) => this.handleAim(e.clientX, e.clientY)
@@ -221,9 +223,36 @@ export class BubbleShooterScene implements Scene {
     if (cluster.length >= 3) {
       for (const c of cluster) this.grid.removeBubble(c.col, c.row)
 
-      // Drop any bubbles now disconnected from the top
+      // Animate any bubbles now disconnected from the top
       const floating = this.grid.findFloating()
-      for (const f of floating) this.grid.removeBubble(f.col, f.row)
+      this.animateDrop(floating)
+    }
+  }
+
+  private animateDrop(cells: { col: number; row: number }[]) {
+    for (const c of cells) {
+      const bubble = this.grid.extractBubble(c.col, c.row)
+      if (!bubble) continue
+
+      this.dropLayer.addChild(bubble.view)
+
+      // Stagger slightly so a cascade looks like separate bubbles falling
+      const delay    = Math.random() * 0.08
+      const drift    = (Math.random() - 0.5) * 40   // gentle horizontal drift
+      const duration = 0.55 + Math.random() * 0.15
+
+      gsap.to(bubble.view, {
+        x:        bubble.view.x + drift,
+        y:        bubble.view.y + 520,
+        alpha:    0,
+        duration,
+        delay,
+        ease:     'power2.in',
+        onComplete: () => {
+          this.dropLayer.removeChild(bubble.view)
+          bubble.view.destroy()
+        },
+      })
     }
   }
 
