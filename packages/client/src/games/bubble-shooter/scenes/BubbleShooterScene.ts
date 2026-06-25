@@ -24,7 +24,7 @@ export class BubbleShooterScene implements Scene {
   private dropLayer     = new Container()   // falling bubbles after disconnect
   private launcherLayer = new Container()
 
-  private grid:     GridManager
+  readonly grid:     GridManager
   private launcher: Launcher
   private aimGuide  = new Graphics()
 
@@ -34,9 +34,10 @@ export class BubbleShooterScene implements Scene {
   private score          = 0
   private scoreText:     Text
 
-  private gameState:   'playing' | 'won' | 'lost' = 'playing'
-  private onGameOver?: (score: number, state: 'won' | 'lost') => void
-  private dangerY:     number
+  private gameState:    'playing' | 'won' | 'lost' = 'playing'
+  private getNextColor: () => BubbleColor
+  private onGameOver?:  (score: number, state: 'won' | 'lost') => void
+  private dangerY:      number
 
   private launcherX: number
   private launcherY: number
@@ -52,8 +53,13 @@ export class BubbleShooterScene implements Scene {
   private boundClick:     (e: MouseEvent) => void
   private boundKeyDown:   (e: KeyboardEvent) => void
 
-  constructor(app: Application, onGameOver?: (score: number, state: 'won' | 'lost') => void) {
-    this.onGameOver = onGameOver
+  constructor(
+    app: Application,
+    getNextColor: () => BubbleColor,
+    onGameOver?: (score: number, state: 'won' | 'lost') => void,
+  ) {
+    this.getNextColor = getNextColor
+    this.onGameOver   = onGameOver
     const W = app.screen.width
     const H = app.screen.height
     this.launcherX = W / 2
@@ -157,11 +163,6 @@ export class BubbleShooterScene implements Scene {
       { x: 1.35, y: 1.35 },
       { x: 1, y: 1, duration: 0.22, ease: 'back.out(2)' },
     )
-  }
-
-  private sampleColor(): BubbleColor {
-    const colors = this.grid.getBoardColors()
-    return colors[Math.floor(Math.random() * colors.length)]
   }
 
   private toAimAngle(mx: number, my: number): number {
@@ -331,7 +332,7 @@ export class BubbleShooterScene implements Scene {
     // Animating container.y back to 0 creates the slide-in effect.
     gsap.killTweensOf(this.grid.container)
     this.grid.container.y = -ROW_SPACING
-    this.grid.addTopRow(() => this.sampleColor())
+    this.grid.addTopRow(() => this.getNextColor())
     gsap.to(this.grid.container, {
       y: 0,
       duration: 0.45,
@@ -346,9 +347,9 @@ export class BubbleShooterScene implements Scene {
     if (Math.random() < SPECIAL_SPAWN_RATE) {
       const types: SpecialType[] = ['bomb', 'rainbow', 'colorBomb', 'stone', 'frozen', 'lightning']
       const type = types[Math.floor(Math.random() * types.length)]
-      return new Bubble(this.sampleColor(), type)
+      return new Bubble(this.getNextColor(), type)
     }
-    return new Bubble(this.sampleColor())
+    return new Bubble(this.getNextColor())
   }
 
   private landBubble(bubble: Bubble, px: number, py: number) {

@@ -2,7 +2,8 @@ import { Server } from 'colyseus'
 import { createServer } from 'http'
 import express from 'express'
 import cors from 'cors'
-import { GameRoom } from './rooms/GameRoom'
+import { GameRoom }           from './rooms/GameRoom'
+import { BubbleShooterRoom } from './rooms/BubbleShooterRoom'
 
 const app = express()
 
@@ -20,6 +21,7 @@ const httpServer = createServer(app)
 
 const gameServer = new Server({ server: httpServer })
 gameServer.define('game_room', GameRoom)
+gameServer.define('bubble_shooter_room', BubbleShooterRoom)
 
 const PORT = Number(process.env.PORT) || 2567
 gameServer.listen(PORT).then(() => {

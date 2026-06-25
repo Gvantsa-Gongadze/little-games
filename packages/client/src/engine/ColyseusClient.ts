@@ -12,3 +12,7 @@ export function getClient(): Client {
 export async function joinGameRoom(name: string): Promise<Room> {
   return getClient().joinOrCreate('game_room', { name })
 }
+
+export async function joinBubbleShooterRoom(): Promise<Room> {
+  return getClient().joinOrCreate('bubble_shooter_room')
+}
