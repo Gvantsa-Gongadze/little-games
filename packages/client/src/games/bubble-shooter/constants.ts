@@ -10,6 +10,8 @@ export const LAUNCHER_Y_OFFSET  = 70                           // px from bottom
 export const BARREL_LENGTH      = 44                           // px from launcher centre to barrel tip
 export const MIN_AIM_ANGLE      = 18 * (Math.PI / 180)        // minimum angle from horizontal (prevents near-horizontal shots)
 
+export const HUD_FONT = '"Press Start 2P"'   // CSS font-family for all in-game Text nodes
+
 export type BubbleColor = 'red' | 'blue' | 'green' | 'yellow' | 'purple' | 'orange'
 
 export const COLOR_HEX: Record<BubbleColor, number> = {

@@ -124,7 +124,7 @@ T.home.*         title, tagline, signInTagline, usernamePlaceholder, emailPlaceh
                  passwordPlaceholder, confirmEmail, signIn, signUp, signOut
 T.touch.*        left, right, thrust, fire, hyperspace
 T.arena2d.*      pressSpace
-T.bubble.*       pressSpace, gameOver, win, score, next
+T.bubble.*       pressSpace, gameOver, win, score, next, scoreDefault
 ```
 
 **`data/games.ts`** — `GAMES: GameMeta[]`; `tag` type: `'2D' | '3D' | 'ARCADE' | 'CLASSIC'`
@@ -230,6 +230,7 @@ BUBBLE_SPEED      = 12           // px per frame at deltaTime=1
 LAUNCHER_Y_OFFSET = 70           // px from bottom of screen to launcher centre
 BARREL_LENGTH     = 44           // px from launcher centre to barrel tip
 MIN_AIM_ANGLE     = 18° (rad)    // minimum angle from horizontal — prevents near-horizontal shots
+HUD_FONT          = '"Press Start 2P"'  // CSS fontFamily used for every in-game Text node
 BubbleColor       = 'red' | 'blue' | 'green' | 'yellow' | 'purple' | 'orange'
 COLOR_HEX         = { red: 0xe74c3c, blue: 0x3498db, green: 0x2ecc71,
                        yellow: 0xf1c40f, purple: 0x9b59b6, orange: 0xe67e22 }
@@ -250,11 +251,14 @@ COLOR_HEX         = { red: 0xe74c3c, blue: 0x3498db, green: 0x2ecc71,
 | `dropLayer` | Floating bubbles mid-fall animation |
 | `walls` + `bar` | Playfield wall lines + bottom platform (static Graphics) |
 | `launcherLayer` | Aim guide + launcher visual + current bubble + "NEXT" label + next bubble preview |
+| `hudLayer` | Score panel fixed to top-right of screen (above grid, on top of all layers) |
 
 Key fields:
 - `wallLeft` / `wallRight` — x-coordinates of the grid's left and right edges (`startX - BUBBLE_RADIUS` and `startX - BUBBLE_RADIUS + gridPixelWidth`). Bounce walls are the **grid edges**, not the screen edges — this keeps fired bubbles inside the grid's column range at all times.
 - `currentBubble` — the bubble sitting at the launcher, ready to fire.
 - `nextBubble` — preview bubble rendered 65 px to the right of the launcher center, with a "NEXT" label (`T.bubble.next`) above it. Both live in `launcherLayer`.
+- `score` — running integer score (starts at 0).
+- `scoreText` — Pixi `Text` node inside `hudLayer`; updated and scale-bumped by `addScore()`.
 
 Key behaviours:
 - **Color sampling** (`sampleColor()`): calls `grid.getBoardColors()` and picks a random color from that set. Only colors currently present on the board are ever spawned — prevents unwinnable situations where the player holds a color that no longer exists on the grid. Falls back to all 6 colors if the board is empty.
@@ -266,6 +270,8 @@ Key behaviours:
 - **Landing triggers**: `shouldLand = true` when (a) `y - BUBBLE_RADIUS ≤ GRID_TOP_PAD` (top boundary), OR (b) any nearby occupied grid cell is within `2 × BUBBLE_RADIUS` of the bubble centre (checks `pixelToCell` + 6 hex neighbours each frame).
 - **`landBubble(bubble, px, py)`**: removes bubble from `flightLayer`, calls `grid.findSnapCell()`, places bubble at snapped cell, runs `findCluster()` — if ≥ 3 same-colour bubbles, pops all of them (instant `removeBubble`) then calls `findFloating()` + `animateDrop()` for disconnected bubbles. Discards bubble if no empty snap cell found.
 - **`animateDrop(cells)`**: for each floating cell calls `grid.extractBubble()` (keeps view alive), moves view into `dropLayer`, then runs a GSAP tween — falls 520 px with `power2.in` easing, fades to alpha 0, slight random horizontal drift (±20 px) and stagger delay (0–80 ms) per bubble so cascades look natural. `onComplete` removes and destroys the view.
+- **Scoring** (`addScore(points)`): adds to `this.score`, updates `scoreText.text`, fires a GSAP scale-bounce (`1.35 → 1.0`, 220 ms, `back.out`) so the number visually pops. Called twice per pop event — `cluster.length × 10` pts for the matched cluster, then `floating.length × 20` pts for any disconnected bubbles that drop.
+- **HUD panel**: right-anchored `Text` objects (`anchor.set(1, 0)`) at `x = W - 14` so the score grows leftward as digits increase. "SCORE" label at 9 px (`#6699aa`), value at 15 px (`#ff6eb4`, game accent pink). Dark near-black background rect (`W - 190` to `W`, full `GRID_TOP_PAD` height) with left + bottom border strokes for definition.
 - **One bubble in the air at a time** — `handleFire` returns early if `inFlight` is not null.
 - `destroy()` removes both `mousemove` and `click` listeners.
 
@@ -411,7 +417,7 @@ Auth: Email provider enabled. Username stored in `auth.users.user_metadata.usern
 | Bubble Shooter — grid snap | ✓ `findSnapCell` + `place` wire up on landing |
 | Bubble Shooter — match & pop | ✓ `findCluster` BFS pops clusters of 3+ |
 | Bubble Shooter — floating drop | ✓ `findFloating` + `animateDrop`: disconnected bubbles fall with GSAP gravity animation |
-| Bubble Shooter — scoring | No score tracking or HUD yet |
+| Bubble Shooter — scoring | ✓ `addScore()` — cluster pop ×10 pts, floating drop ×20 pts; HUD panel top-right with scale-bounce animation |
 | Bubble Shooter — win / lose | No win (board clear) or lose (bubble crosses danger line) condition yet |
 | Bubble Shooter — next preview | ✓ `nextBubble` rendered at `launcherX + 65` with "NEXT" label; queue advances on every fire |
 | Bubble Shooter — colour sampling | ✓ `sampleColor()` calls `getBoardColors()` — only spawns colors present on the board |
@@ -425,7 +431,8 @@ Auth: Email provider enabled. Username stored in `auth.users.user_metadata.usern
 - **GSAP for all async timing** — `gsap.delayedCall(seconds, fn)` replaces every `setTimeout`. Store the returned tween as a field and call `.kill()` in `destroy()` to prevent callbacks firing on dead scenes.
 - **AudioContext autoplay guard** — `RetroAudio.getCtx()` returns `null` until the context is `'running'`; all sound methods guard with `if (!ctx) return`. No user-gesture prompt, no console error.
 - **Font FOUT fix** — three-layer: `<link rel="preload">` in HTML, `display=block` on the Google Fonts stylesheet, `document.fonts.load()` in `main.tsx` before React mounts.
-- **Centralised strings** — all UI text in `data/strings.json`, imported as `T`. Never inline string literals in component/scene files.
+- **Centralised strings** — all UI text in `data/strings.json`, imported as `T`. Never inline string literals in component/scene files. This includes default display values (e.g. `T.bubble.scoreDefault = "0"`), not just labels.
+- **Centralised style constants** — repeated style values (font family, shared colours) live in `constants.ts`, not inlined per `Text` node. All bubble-shooter `Text` objects use `HUD_FONT` from `constants.ts` for their `fontFamily`.
 - **ErrorBoundary on canvas** — both Pixi and Three throw on WebGL failure; `ErrorBoundary` catches.
 - **Singleton clients** — `ColyseusClient`, `supabase` are module-level singletons.
 - **Ref-stable callbacks** — `PixiCanvas` uses `onGameOverRef` to avoid stale closure in game loop.

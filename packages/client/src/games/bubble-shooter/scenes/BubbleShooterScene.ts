@@ -6,7 +6,7 @@ import { GridManager } from '../managers/GridManager'
 import { Launcher }    from '../entities/Launcher'
 import { Bubble }      from '../entities/Bubble'
 import {
-  BUBBLE_RADIUS, COL_SPACING, COLS, GRID_TOP_PAD,
+  BUBBLE_RADIUS, COL_SPACING, COLS, GRID_TOP_PAD, HUD_FONT,
   BUBBLE_SPEED, LAUNCHER_Y_OFFSET, BARREL_LENGTH, MIN_AIM_ANGLE,
   type BubbleColor,
 } from '../constants'
@@ -30,6 +30,8 @@ export class BubbleShooterScene implements Scene {
   private inFlight:      InFlight | null = null
   private currentBubble: Bubble
   private nextBubble:    Bubble
+  private score          = 0
+  private scoreText:     Text
 
   private launcherX: number
   private launcherY: number
@@ -81,7 +83,7 @@ export class BubbleShooterScene implements Scene {
     // "NEXT" label above the preview slot
     const nextLabel = new Text({
       text: T.bubble.next,
-      style: { fill: 0x888888, fontSize: 8, fontFamily: '"Press Start 2P"' },
+      style: { fill: 0x888888, fontSize: 8, fontFamily: HUD_FONT },
     })
     nextLabel.anchor.set(0.5)
     nextLabel.x = this.launcherX + 65
@@ -93,7 +95,33 @@ export class BubbleShooterScene implements Scene {
       nextLabel, this.nextBubble.view,
     )
 
-    this.view.addChild(this.gridLayer, this.flightLayer, this.dropLayer, walls, bar, this.launcherLayer)
+    // HUD — score panel on the right side of the top bar
+    const hudLayer = new Container()
+
+    const panelBg = new Graphics()
+    panelBg.rect(W - 190, 0, 190, GRID_TOP_PAD).fill({ color: 0x060d13, alpha: 0.8 })
+    panelBg.moveTo(W - 190, 0).lineTo(W - 190, GRID_TOP_PAD).stroke({ color: 0x3388aa, alpha: 0.3, width: 1 })
+    panelBg.moveTo(W - 190, GRID_TOP_PAD).lineTo(W, GRID_TOP_PAD).stroke({ color: 0x3388aa, alpha: 0.3, width: 1 })
+
+    const scoreLbl = new Text({
+      text: T.bubble.score,
+      style: { fill: 0x6699aa, fontSize: 9, fontFamily: HUD_FONT },
+    })
+    scoreLbl.anchor.set(1, 0)
+    scoreLbl.x = W - 14
+    scoreLbl.y = 5
+
+    this.scoreText = new Text({
+      text: T.bubble.scoreDefault,
+      style: { fill: 0xff6eb4, fontSize: 15, fontFamily: HUD_FONT },
+    })
+    this.scoreText.anchor.set(1, 0)
+    this.scoreText.x = W - 14
+    this.scoreText.y = 19
+
+    hudLayer.addChild(panelBg, scoreLbl, this.scoreText)
+
+    this.view.addChild(this.gridLayer, this.flightLayer, this.dropLayer, walls, bar, this.launcherLayer, hudLayer)
 
     // Pointer events
     this.boundMouseMove = (e) => this.handleAim(e.clientX, e.clientY)
@@ -101,6 +129,15 @@ export class BubbleShooterScene implements Scene {
     window.addEventListener('mousemove', this.boundMouseMove)
     window.addEventListener('click',     this.boundClick)
 
+  }
+
+  private addScore(points: number) {
+    this.score += points
+    this.scoreText.text = String(this.score)
+    gsap.fromTo(this.scoreText.scale,
+      { x: 1.35, y: 1.35 },
+      { x: 1, y: 1, duration: 0.22, ease: 'back.out(2)' },
+    )
   }
 
   private sampleColor(): BubbleColor {
@@ -246,10 +283,12 @@ export class BubbleShooterScene implements Scene {
     // BFS colour-match: pop cluster of 3+
     const cluster = this.grid.findCluster(snapCell.col, snapCell.row)
     if (cluster.length >= 3) {
+      this.addScore(cluster.length * 10)
       for (const c of cluster) this.grid.removeBubble(c.col, c.row)
 
       // Animate any bubbles now disconnected from the top
       const floating = this.grid.findFloating()
+      if (floating.length > 0) this.addScore(floating.length * 20)
       this.animateDrop(floating)
     }
   }

@@ -50,6 +50,7 @@
     "gameOver": "GAME OVER",
     "win": "YOU WIN!",
     "score": "SCORE",
-    "next": "NEXT"
+    "next": "NEXT",
+    "scoreDefault": "0"
   }
 }
