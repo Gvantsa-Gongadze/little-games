@@ -241,19 +241,25 @@ COLOR_HEX         = { red: 0xe74c3c, blue: 0x3498db, green: 0x2ecc71,
 - Handles `resize` → `app.renderer.resize`.
 - Guards against destroyed-before-init with `destroyed` + `initDone` flags.
 
-**`scenes/BubbleShooterScene.ts`** — main game loop. Three rendering layers (back → front):
+**`scenes/BubbleShooterScene.ts`** — main game loop. Four rendering layers (back → front):
 
 | Layer | Contents |
 |---|---|
 | `gridLayer` | Static grid bubbles (via `grid.container`) |
 | `flightLayer` | In-flight bubble while travelling |
+| `walls` + `bar` | Playfield wall lines + bottom platform (static Graphics) |
 | `launcherLayer` | Aim guide + launcher visual + preview bubble |
+
+Key fields:
+- `wallLeft` / `wallRight` — x-coordinates of the grid's left and right edges (`startX - BUBBLE_RADIUS` and `startX - BUBBLE_RADIUS + gridPixelWidth`). Bounce walls are the **grid edges**, not the screen edges — this keeps fired bubbles inside the grid's column range at all times.
 
 Key behaviours:
 - **Mouse aim** (`mousemove`): `toAimAngle()` converts pointer position to an angle clamped to `[-π + MIN_AIM_ANGLE, -MIN_AIM_ANGLE]` (always upward, never near-horizontal). Updates `Launcher.setAngle()` and redraws aim guide.
 - **Fire** (`click`): hands `currentBubble` to `flightLayer` with velocity `(cos θ × SPEED, sin θ × SPEED)`. Creates a new `currentBubble` preview at launcher.
-- **Aim guide** (`drawAimGuide`): traces dots every 16 px from barrel tip, simulating wall bounces, fading out over 38 steps. Stops at `GRID_TOP_PAD`.
-- **Physics** (`update(delta)`): advances in-flight bubble position; reflects `vx` with `Math.abs` on left wall, `-Math.abs` on right wall (prevents tunnelling). When `y - BUBBLE_RADIUS <= GRID_TOP_PAD`, destroys bubble and clears `inFlight` (placeholder — step 3 will snap to grid).
+- **Aim guide** (`drawAimGuide`): traces dots every 16 px from barrel tip, simulating wall bounces against `wallLeft`/`wallRight`, fading out over 38 steps. Stops at `GRID_TOP_PAD`.
+- **Physics** (`update(delta)`): advances position; reflects `vx` off `wallLeft` / `wallRight` using `Math.abs` (prevents tunnelling).
+- **Landing triggers**: `shouldLand = true` when (a) `y - BUBBLE_RADIUS ≤ GRID_TOP_PAD` (top boundary), OR (b) any nearby occupied grid cell is within `2 × BUBBLE_RADIUS` of the bubble centre (checks `pixelToCell` + 6 hex neighbours each frame).
+- **`landBubble(bubble, px, py)`**: removes bubble from `flightLayer`, calls `grid.findSnapCell()`, places bubble at snapped cell, runs `findCluster()` — if ≥ 3 same-colour bubbles, pops all of them then calls `findFloating()` to drop disconnected bubbles. Discards bubble if no empty snap cell found.
 - **One bubble in the air at a time** — `handleFire` returns early if `inFlight` is not null.
 - `destroy()` removes both `mousemove` and `click` listeners.
 
@@ -267,11 +273,18 @@ Key behaviours:
 
 **`managers/GridManager.ts`**
 - Owns the grid state as `GridCell[][] = { bubble: Bubble | null }`.
+- **`colsInRow(row)`** → `COLS` (11) for even rows, `COLS - 1` (10) for odd rows.
 - **`cellToPixel(col, row)`** → `{ x, y }`: even rows unshifted; odd rows shifted right by `BUBBLE_RADIUS`.
-- **`pixelToCell(px, py)`** → `{ col, row }`: inverse of above; clamps to valid range.
-- **`colsInRow(row)`** → `COLS` for even rows, `COLS - 1` for odd rows.
-- **`place(col, row, bubble)`** → positions bubble view and adds to `container`.
+- **`pixelToCell(px, py)`** → `{ col, row }`: inverse of above; clamps to valid bounds.
+- **`getCell(col, row)`** → `GridCell | null`.
+- **`place(col, row, bubble)`** → positions bubble view and adds to `container`. Creates the row array if it doesn't exist yet (handles bubbles landing below the initial grid).
 - **`populate(layout)`** → fills grid from a 2-D `BubbleColor | null` array.
+- **`getHexNeighbors(col, row)`** → up to 6 adjacent cells using offset-row formula: even rows shift col by −1 for upper/lower-left; odd rows shift col by +1 for upper/lower-right. Filters to valid grid bounds.
+- **`findSnapCell(px, py)`** → nearest empty cell among primary + 6 neighbours; treats uninitialised rows as empty so bubbles can extend the grid downward. Returns `null` if all candidates are occupied.
+- **`findCluster(col, row)`** → BFS flood-fill collecting all same-colour connected cells from the given position.
+- **`findFloating()`** → BFS seeded from every occupied cell in row 0; returns all occupied cells NOT reachable from the top (disconnected after a pop).
+- **`removeBubble(col, row)`** → removes Pixi view, destroys it, nulls the cell.
+- **`isEmpty()`** → `true` if no bubble remains in the grid (win condition).
 
 **`data/levels.ts`**
 - `LEVEL_1`: 5-row starter layout. Even rows: 11 cols; odd rows: 10 cols (offset row, no trailing element).
@@ -387,9 +400,9 @@ Auth: Email provider enabled. Username stored in `auth.users.user_metadata.usern
 | Arena-2D game-over trigger | `GameScene` accepts `onGameOver` but never calls it |
 | Multiplayer sync | Client joins room but never sends `'move'` or reads server state |
 | Shared types usage | `IGameState`/`PlayerState` in `packages/shared` unused |
-| Bubble Shooter — grid snap | In-flight bubble is destroyed at grid boundary; snap + match not yet wired |
-| Bubble Shooter — match & pop | BFS colour-match and cluster pop not yet implemented |
-| Bubble Shooter — floating drop | Connectivity check + falling bubbles not yet implemented |
+| Bubble Shooter — grid snap | ✓ `findSnapCell` + `place` wire up on landing |
+| Bubble Shooter — match & pop | ✓ `findCluster` BFS pops clusters of 3+ |
+| Bubble Shooter — floating drop | ✓ `findFloating` BFS drops disconnected bubbles after each pop |
 | Bubble Shooter — scoring | No score tracking or HUD yet |
 | Bubble Shooter — win / lose | No win (board clear) or lose (bubble crosses danger line) condition yet |
 | Bubble Shooter — next preview | `currentBubble` shows at launcher but no separate "next" display yet |

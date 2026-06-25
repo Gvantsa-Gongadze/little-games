@@ -33,7 +33,8 @@ export class BubbleShooterScene implements Scene {
 
   private launcherX: number
   private launcherY: number
-  private screenW:   number
+  private wallLeft:  number   // left bounce wall  = left edge of grid
+  private wallRight: number   // right bounce wall = right edge of grid
   private aimAngle = -Math.PI / 2   // straight up
 
   private boundMouseMove: (e: MouseEvent) => void
@@ -42,14 +43,18 @@ export class BubbleShooterScene implements Scene {
   constructor(app: Application) {
     const W = app.screen.width
     const H = app.screen.height
-    this.screenW   = W
     this.launcherX = W / 2
     this.launcherY = H - LAUNCHER_Y_OFFSET
 
-    // Grid
-    const gridPixelWidth = COLS * COL_SPACING
+    // Grid — centred horizontally
+    const gridPixelWidth = COLS * COL_SPACING   // 440 px for 11 cols
     const startX = (W - gridPixelWidth) / 2 + BUBBLE_RADIUS
     this.grid = new GridManager(startX, GRID_TOP_PAD)
+
+    // Bounce walls = grid edges, not screen edges.
+    // Bubbles must stay inside the playfield so they always land on the grid.
+    this.wallLeft  = startX - BUBBLE_RADIUS          // left face of col-0 bubble
+    this.wallRight = startX - BUBBLE_RADIUS + gridPixelWidth  // right face of col-10 bubble
     this.grid.populate(LEVEL_1)
     this.gridLayer.addChild(this.grid.container)
 
@@ -60,6 +65,11 @@ export class BubbleShooterScene implements Scene {
     this.currentBubble.view.x = this.launcherX
     this.currentBubble.view.y = this.launcherY
 
+    // Playfield wall lines (visual guides matching bounce walls)
+    const walls = new Graphics()
+    walls.moveTo(this.wallLeft,  GRID_TOP_PAD).lineTo(this.wallLeft,  H - 36).stroke({ color: 0x3388aa, alpha: 0.25, width: 1 })
+    walls.moveTo(this.wallRight, GRID_TOP_PAD).lineTo(this.wallRight, H - 36).stroke({ color: 0x3388aa, alpha: 0.25, width: 1 })
+
     // Bottom platform bar
     const bar = new Graphics()
     bar.rect(0, H - 36, W, 36).fill({ color: 0x0d1a22 })
@@ -68,7 +78,7 @@ export class BubbleShooterScene implements Scene {
     // Launcher layer: aim guide behind launcher, preview bubble in front
     this.launcherLayer.addChild(this.aimGuide, this.launcher.view, this.currentBubble.view)
 
-    this.view.addChild(this.gridLayer, this.flightLayer, bar, this.launcherLayer)
+    this.view.addChild(this.gridLayer, this.flightLayer, walls, bar, this.launcherLayer)
 
     // Pointer events
     this.boundMouseMove = (e) => this.handleAim(e.clientX, e.clientY)
@@ -136,11 +146,11 @@ export class BubbleShooterScene implements Scene {
       y += vy * DOT_STEP
 
       // mirror wall bounces in the guide
-      if (x - BUBBLE_RADIUS <= 0) {
-        x  = BUBBLE_RADIUS + (BUBBLE_RADIUS - (x - BUBBLE_RADIUS))
+      if (x - BUBBLE_RADIUS <= this.wallLeft) {
+        x  = this.wallLeft + BUBBLE_RADIUS
         vx = -vx
-      } else if (x + BUBBLE_RADIUS >= this.screenW) {
-        x  = this.screenW - BUBBLE_RADIUS
+      } else if (x + BUBBLE_RADIUS >= this.wallRight) {
+        x  = this.wallRight - BUBBLE_RADIUS
         vx = -vx
       }
 
@@ -158,22 +168,62 @@ export class BubbleShooterScene implements Scene {
     f.bubble.view.x += f.vx * delta
     f.bubble.view.y += f.vy * delta
 
-    // Left wall
-    if (f.bubble.view.x - BUBBLE_RADIUS <= 0) {
-      f.bubble.view.x = BUBBLE_RADIUS
+    // Left playfield wall
+    if (f.bubble.view.x - BUBBLE_RADIUS <= this.wallLeft) {
+      f.bubble.view.x = this.wallLeft + BUBBLE_RADIUS
       f.vx = Math.abs(f.vx)
     }
-    // Right wall
-    else if (f.bubble.view.x + BUBBLE_RADIUS >= this.screenW) {
-      f.bubble.view.x = this.screenW - BUBBLE_RADIUS
+    // Right playfield wall
+    else if (f.bubble.view.x + BUBBLE_RADIUS >= this.wallRight) {
+      f.bubble.view.x = this.wallRight - BUBBLE_RADIUS
       f.vx = -Math.abs(f.vx)
     }
 
-    // Reached the grid area — placeholder until step 3 (snap + match)
-    if (f.bubble.view.y - BUBBLE_RADIUS <= GRID_TOP_PAD) {
-      this.flightLayer.removeChild(f.bubble.view)
-      f.bubble.view.destroy()
+    // Reached the hard top boundary
+    let shouldLand = f.bubble.view.y - BUBBLE_RADIUS <= GRID_TOP_PAD
+
+    // Check proximity to any occupied grid cell
+    if (!shouldLand) {
+      const approx  = this.grid.pixelToCell(f.bubble.view.x, f.bubble.view.y)
+      const toCheck = [approx, ...this.grid.getHexNeighbors(approx.col, approx.row)]
+      for (const n of toCheck) {
+        const cell = this.grid.getCell(n.col, n.row)
+        if (!cell?.bubble) continue
+        const { x, y } = this.grid.cellToPixel(n.col, n.row)
+        if (Math.hypot(f.bubble.view.x - x, f.bubble.view.y - y) < BUBBLE_RADIUS * 2) {
+          shouldLand = true
+          break
+        }
+      }
+    }
+
+    if (shouldLand) {
       this.inFlight = null
+      this.landBubble(f.bubble, f.bubble.view.x, f.bubble.view.y)
+    }
+  }
+
+  private landBubble(bubble: Bubble, px: number, py: number) {
+    this.flightLayer.removeChild(bubble.view)
+
+    const snapCell = this.grid.findSnapCell(px, py)
+    if (!snapCell) {
+      // No valid empty cell found — discard the bubble
+      bubble.view.destroy()
+      return
+    }
+
+    // Snap bubble into the grid
+    this.grid.place(snapCell.col, snapCell.row, bubble)
+
+    // BFS colour-match: pop cluster of 3+
+    const cluster = this.grid.findCluster(snapCell.col, snapCell.row)
+    if (cluster.length >= 3) {
+      for (const c of cluster) this.grid.removeBubble(c.col, c.row)
+
+      // Drop any bubbles now disconnected from the top
+      const floating = this.grid.findFloating()
+      for (const f of floating) this.grid.removeBubble(f.col, f.row)
     }
   }
 
