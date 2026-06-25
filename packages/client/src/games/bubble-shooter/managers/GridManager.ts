@@ -119,11 +119,27 @@ export class GridManager {
   // ─── BFS helpers ─────────────────────────────────────────────────────────
 
   // Flood-fill from (col, row) collecting all same-colour connected cells.
+  // Special rules: stone is immune; rainbow is a wildcard that matches any colour;
+  // bomb/lightning/colorBomb return [] because the scene handles those separately.
   findCluster(col: number, row: number): { col: number; row: number }[] {
     const startCell = this.getCell(col, row)
     if (!startCell?.bubble) return []
 
-    const color   = startCell.bubble.color
+    const sb = startCell.bubble
+    if (sb.special === 'stone') return []
+    if (sb.special === 'bomb' || sb.special === 'lightning' || sb.special === 'colorBomb') return []
+
+    // Rainbow: inherit colour from the first non-special neighbour found
+    let targetColor = sb.color
+    if (sb.special === 'rainbow') {
+      const coloredNeighbor = this.getHexNeighbors(col, row).find(n => {
+        const b = this.getCell(n.col, n.row)?.bubble
+        return b && !b.special
+      })
+      if (!coloredNeighbor) return []
+      targetColor = this.getCell(coloredNeighbor.col, coloredNeighbor.row)!.bubble!.color
+    }
+
     const visited = new Set<string>()
     const queue   = [{ col, row }]
     const cluster: { col: number; row: number }[] = []
@@ -135,7 +151,11 @@ export class GridManager {
       visited.add(key)
 
       const cell = this.getCell(cur.col, cur.row)
-      if (!cell?.bubble || cell.bubble.color !== color) continue
+      if (!cell?.bubble) continue
+      const b = cell.bubble
+      if (b.special === 'stone') continue
+      const matches = b.special === 'rainbow' || b.color === targetColor
+      if (!matches) continue
 
       cluster.push(cur)
       for (const n of this.getHexNeighbors(cur.col, cur.row)) {
@@ -231,5 +251,54 @@ export class GridManager {
       }
     }
     return true
+  }
+
+  // All occupied non-stone cells within `rings` hex steps of (col, row).
+  getBombTargets(col: number, row: number, rings: number): { col: number; row: number }[] {
+    const visited = new Set<string>()
+    const queue: { col: number; row: number; dist: number }[] = [{ col, row, dist: 0 }]
+    const result: { col: number; row: number }[] = []
+
+    while (queue.length > 0) {
+      const cur = queue.shift()!
+      const key = `${cur.col},${cur.row}`
+      if (visited.has(key)) continue
+      visited.add(key)
+
+      const b = this.grid[cur.row]?.[cur.col]?.bubble
+      if (b && b.special !== 'stone') result.push({ col: cur.col, row: cur.row })
+
+      if (cur.dist < rings) {
+        for (const n of this.getHexNeighbors(cur.col, cur.row)) {
+          if (!visited.has(`${n.col},${n.row}`)) queue.push({ ...n, dist: cur.dist + 1 })
+        }
+      }
+    }
+
+    return result
+  }
+
+  // All occupied non-stone cells in the given row.
+  getCellsInRow(row: number): { col: number; row: number }[] {
+    if (!this.grid[row]) return []
+    const result: { col: number; row: number }[] = []
+    for (let c = 0; c < this.grid[row].length; c++) {
+      const b = this.grid[row][c]?.bubble
+      if (b && b.special !== 'stone') result.push({ col: c, row })
+    }
+    return result
+  }
+
+  // All occupied non-stone cells whose colour matches the given BubbleColor.
+  getCellsOfColor(color: BubbleColor): { col: number; row: number }[] {
+    const result: { col: number; row: number }[] = []
+    for (let r = 0; r < this.grid.length; r++) {
+      if (!this.grid[r]) continue
+      for (let c = 0; c < this.grid[r].length; c++) {
+        const b = this.grid[r][c]?.bubble
+        if (b && b.color === color && b.special !== 'stone') result.push({ col: c, row: r })
+      }
+    }
+    return result
   }
 }

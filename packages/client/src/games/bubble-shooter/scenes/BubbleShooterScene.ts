@@ -8,7 +8,8 @@ import { Bubble }      from '../entities/Bubble'
 import {
   BUBBLE_RADIUS, COL_SPACING, COLS, GRID_TOP_PAD, HUD_FONT,
   BUBBLE_SPEED, LAUNCHER_Y_OFFSET, BARREL_LENGTH, MIN_AIM_ANGLE,
-  type BubbleColor,
+  SPECIAL_SPAWN_RATE,
+  type BubbleColor, type SpecialType,
 } from '../constants'
 import { LEVEL_1 } from '../data/levels'
 
@@ -73,10 +74,10 @@ export class BubbleShooterScene implements Scene {
 
     // Launcher + current and next bubbles
     this.launcher = new Launcher(this.launcherX, this.launcherY)
-    this.currentBubble = new Bubble(this.sampleColor())
+    this.currentBubble = this.spawnBubble()
     this.currentBubble.view.x = this.launcherX
     this.currentBubble.view.y = this.launcherY
-    this.nextBubble = new Bubble(this.sampleColor())
+    this.nextBubble = this.spawnBubble()
     this.nextBubble.view.x = this.launcherX + 65
     this.nextBubble.view.y = this.launcherY
 
@@ -199,7 +200,7 @@ export class BubbleShooterScene implements Scene {
     this.currentBubble = this.nextBubble
     this.currentBubble.view.x = this.launcherX
     this.currentBubble.view.y = this.launcherY
-    this.nextBubble = new Bubble(this.sampleColor())
+    this.nextBubble = this.spawnBubble()
     this.nextBubble.view.x = this.launcherX + 65
     this.nextBubble.view.y = this.launcherY
     this.launcherLayer.addChild(this.nextBubble.view)
@@ -286,35 +287,111 @@ export class BubbleShooterScene implements Scene {
     }
   }
 
+  private spawnBubble(): Bubble {
+    if (Math.random() < SPECIAL_SPAWN_RATE) {
+      const types: SpecialType[] = ['bomb', 'rainbow', 'colorBomb', 'stone', 'frozen', 'lightning']
+      const type = types[Math.floor(Math.random() * types.length)]
+      return new Bubble(this.sampleColor(), type)
+    }
+    return new Bubble(this.sampleColor())
+  }
+
   private landBubble(bubble: Bubble, px: number, py: number) {
     this.flightLayer.removeChild(bubble.view)
 
     const snapCell = this.grid.findSnapCell(px, py)
-    if (!snapCell) {
-      // No valid empty cell found — discard the bubble
-      bubble.view.destroy()
-      return
-    }
+    if (!snapCell) { bubble.view.destroy(); return }
 
-    // Snap bubble into the grid
     this.grid.place(snapCell.col, snapCell.row, bubble)
 
-    // BFS colour-match: pop cluster of 3+
-    const cluster = this.grid.findCluster(snapCell.col, snapCell.row)
-    if (cluster.length >= 3) {
-      this.addScore(cluster.length * 10)
-      for (const c of cluster) this.grid.removeBubble(c.col, c.row)
-
-      // Animate any bubbles now disconnected from the top
-      const floating = this.grid.findFloating()
-      if (floating.length > 0) this.addScore(floating.length * 20)
-      this.animateDrop(floating)
-
-      // Win: board fully cleared
-      if (this.grid.isEmpty()) { this.showResult('won'); return }
+    // Special bubbles with area effects bypass normal cluster matching
+    switch (bubble.special) {
+      case 'bomb':      return this.handleBombEffect(snapCell.col, snapCell.row)
+      case 'lightning': return this.handleLightningEffect(snapCell.col, snapCell.row)
+      case 'colorBomb': return this.handleColorBombEffect(snapCell.col, snapCell.row)
     }
 
-    // Lose: any bubble has reached or crossed the danger line
+    // Normal / rainbow / frozen / stone flow
+    const cluster = this.grid.findCluster(snapCell.col, snapCell.row)
+    if (cluster.length >= 3) {
+      // Pre-existing frozen bubbles in cluster get a first-hit unfreeze instead of a pop.
+      // The fired bubble itself (snapCell) is always popped directly.
+      const isFiredCell = (c: { col: number; row: number }) =>
+        c.col === snapCell.col && c.row === snapCell.row
+
+      const toUnfreeze = cluster.filter(c =>
+        !isFiredCell(c) && this.grid.getCell(c.col, c.row)?.bubble?.special === 'frozen',
+      )
+      const toPop = cluster.filter(c =>
+        isFiredCell(c) || this.grid.getCell(c.col, c.row)?.bubble?.special !== 'frozen',
+      )
+
+      // Swap frozen bubbles for normal ones (first hit)
+      for (const c of toUnfreeze) {
+        const b = this.grid.getCell(c.col, c.row)?.bubble
+        if (!b) continue
+        this.grid.removeBubble(c.col, c.row)
+        this.grid.place(c.col, c.row, new Bubble(b.color))
+      }
+
+      if (toPop.length >= 3) {
+        this.addScore(toPop.length * 10)
+        for (const c of toPop) this.grid.removeBubble(c.col, c.row)
+        const floating = this.grid.findFloating()
+        if (floating.length > 0) this.addScore(floating.length * 20)
+        this.animateDrop(floating)
+        if (this.grid.isEmpty()) { this.showResult('won'); return }
+      }
+    }
+
+    if (this.grid.hasBubbleBelowY(this.dangerY)) this.showResult('lost')
+  }
+
+  private handleBombEffect(col: number, row: number) {
+    const targets = this.grid.getBombTargets(col, row, 2)
+    this.addScore(targets.length * 15)
+    for (const t of targets) this.grid.removeBubble(t.col, t.row)
+    const floating = this.grid.findFloating()
+    if (floating.length > 0) this.addScore(floating.length * 20)
+    this.animateDrop(floating)
+    if (this.grid.isEmpty()) { this.showResult('won'); return }
+    if (this.grid.hasBubbleBelowY(this.dangerY)) this.showResult('lost')
+  }
+
+  private handleLightningEffect(col: number, row: number) {
+    const targets = this.grid.getCellsInRow(row)
+    this.addScore(targets.length * 15)
+    for (const t of targets) this.grid.removeBubble(t.col, t.row)
+    const floating = this.grid.findFloating()
+    if (floating.length > 0) this.addScore(floating.length * 20)
+    this.animateDrop(floating)
+    if (this.grid.isEmpty()) { this.showResult('won'); return }
+    if (this.grid.hasBubbleBelowY(this.dangerY)) this.showResult('lost')
+  }
+
+  private handleColorBombEffect(col: number, row: number) {
+    // Determine target colour from the nearest non-special occupied neighbour
+    const neighbor = this.grid.getHexNeighbors(col, row).find(n => {
+      const b = this.grid.getCell(n.col, n.row)?.bubble
+      return b && !b.special
+    })
+
+    // Remove the color bomb itself first
+    this.grid.removeBubble(col, row)
+
+    if (neighbor) {
+      const targetColor = this.grid.getCell(neighbor.col, neighbor.row)?.bubble?.color
+      if (targetColor) {
+        const targets = this.grid.getCellsOfColor(targetColor)
+        this.addScore(targets.length * 15)
+        for (const t of targets) this.grid.removeBubble(t.col, t.row)
+        const floating = this.grid.findFloating()
+        if (floating.length > 0) this.addScore(floating.length * 20)
+        this.animateDrop(floating)
+        if (this.grid.isEmpty()) { this.showResult('won'); return }
+      }
+    }
+
     if (this.grid.hasBubbleBelowY(this.dangerY)) this.showResult('lost')
   }
 

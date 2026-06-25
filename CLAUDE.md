@@ -231,9 +231,13 @@ LAUNCHER_Y_OFFSET = 70           // px from bottom of screen to launcher centre
 BARREL_LENGTH     = 44           // px from launcher centre to barrel tip
 MIN_AIM_ANGLE     = 18° (rad)    // minimum angle from horizontal — prevents near-horizontal shots
 HUD_FONT          = '"Press Start 2P"'  // CSS fontFamily used for every in-game Text node
+SPECIAL_SPAWN_RATE = 0.15        // 15 % chance each queued bubble is a special type
 BubbleColor       = 'red' | 'blue' | 'green' | 'yellow' | 'purple' | 'orange'
+SpecialType       = 'bomb' | 'rainbow' | 'colorBomb' | 'stone' | 'frozen' | 'lightning'
 COLOR_HEX         = { red: 0xe74c3c, blue: 0x3498db, green: 0x2ecc71,
                        yellow: 0xf1c40f, purple: 0x9b59b6, orange: 0xe67e22 }
+SPECIAL_COLOR_HEX = { bomb: 0x2c2c2c, rainbow: 0xeeeeee, colorBomb: 0xf4d03f,
+                       stone: 0x7f8c8d, frozen: 0xaed6f1, lightning: 0xf7dc6f }
 ```
 
 **`BubbleShooterCanvas.tsx`**
@@ -265,6 +269,7 @@ Key fields:
 - `screenW` / `screenH` — stored from `app.screen` so `showResult()` can centre the overlay without needing `app` later.
 
 Key behaviours:
+- **Bubble spawning** (`spawnBubble()`): 85 % chance → `new Bubble(sampleColor())` (normal colored bubble). 15 % chance → picks a random `SpecialType` from all 6 and returns `new Bubble(sampleColor(), type)`. Replaces all direct `new Bubble(sampleColor())` calls in the constructor and `handleFire`.
 - **Color sampling** (`sampleColor()`): calls `grid.getBoardColors()` and picks a random color from that set. Only colors currently present on the board are ever spawned — prevents unwinnable situations where the player holds a color that no longer exists on the grid. Falls back to all 6 colors if the board is empty.
 - **Mouse aim** (`mousemove`): `toAimAngle()` converts pointer position to an angle clamped to `[-π + MIN_AIM_ANGLE, -MIN_AIM_ANGLE]` (always upward, never near-horizontal). Updates `Launcher.setAngle()` and sets `aimDirty = true` — does NOT call `drawAimGuide` directly (avoids rAF violation).
 - **Aim guide dirty flag**: `aimDirty` boolean; set `true` on every mouse move, cleared in `update()` after redrawing once per frame. Prevents the 38-circle Graphics redraw from firing hundreds of times per second from raw `mousemove` events.
@@ -272,7 +277,11 @@ Key behaviours:
 - **Aim guide** (`drawAimGuide`): traces dots every 16 px from barrel tip, simulating wall bounces against `wallLeft`/`wallRight`, fading out over 38 steps. Stops at `GRID_TOP_PAD`. Only called from `update()`, never from event handlers.
 - **Physics** (`update(delta)`): advances position; reflects `vx` off `wallLeft` / `wallRight` using `Math.abs` (prevents tunnelling).
 - **Landing triggers**: `shouldLand = true` when (a) `y - BUBBLE_RADIUS ≤ GRID_TOP_PAD` (top boundary), OR (b) any nearby occupied grid cell is within `2 × BUBBLE_RADIUS` of the bubble centre (checks `pixelToCell` + 6 hex neighbours each frame).
-- **`landBubble(bubble, px, py)`**: removes bubble from `flightLayer`, calls `grid.findSnapCell()`, places bubble at snapped cell, runs `findCluster()` — if ≥ 3 same-colour bubbles, pops all of them (instant `removeBubble`) then calls `findFloating()` + `animateDrop()` for disconnected bubbles. Discards bubble if no empty snap cell found. After every landing checks win (`grid.isEmpty()`) and lose (`grid.hasBubbleBelowY(dangerY)`).
+- **`landBubble(bubble, px, py)`**: removes bubble from `flightLayer`, calls `grid.findSnapCell()`, places bubble at snapped cell. Dispatches by `bubble.special`:
+  - **bomb** → `handleBombEffect`: removes all non-stone bubbles within 2 hex rings (15 pts/bubble) then checks floating/win/lose.
+  - **lightning** → `handleLightningEffect`: removes all non-stone bubbles in the landing row (15 pts/bubble) then checks floating/win/lose.
+  - **colorBomb** → `handleColorBombEffect`: removes the bomb itself, finds nearest non-special neighbor's color, removes every non-stone bubble of that color from the entire board (15 pts/bubble) then checks floating/win/lose.
+  - **normal / rainbow / frozen / stone** → `findCluster()`. If cluster ≥ 3: pre-existing frozen bubbles in the cluster (not the fired bubble) are "thawed" (swapped for a normal `Bubble(color)`) instead of popped; remaining non-frozen cells are popped (10 pts/bubble) if ≥ 3 remain; then `findFloating()` + `animateDrop()`. Discards bubble if no empty snap cell found. After every path checks win (`grid.isEmpty()`) and lose (`grid.hasBubbleBelowY(dangerY)`).
 - **Win/lose** (`showResult(state)`): sets `gameState`, builds a centred result card (300 × 230 px, `roundRect`, accent-coloured border) over a full-screen dim (`alpha 0 → 0.78`). Shows `T.bubble.win` / `T.bubble.gameOver` in accent colour, final score, a "PLAY AGAIN" Pixi button (`eventMode = 'static'`, hover scale via GSAP, `pointerdown → window.location.reload()`), and "OR PRESS R" hint. Card and result label both animate in via GSAP. R key (`boundKeyDown`) also reloads when `gameState !== 'playing'`.
 - **`animateDrop(cells)`**: for each floating cell calls `grid.extractBubble()` (keeps view alive), moves view into `dropLayer`, then runs a GSAP tween — falls 520 px with `power2.in` easing, fades to alpha 0, slight random horizontal drift (±20 px) and stagger delay (0–80 ms) per bubble so cascades look natural. `onComplete` removes and destroys the view.
 - **Scoring** (`addScore(points)`): adds to `this.score`, updates `scoreText.text`, fires a GSAP scale-bounce (`1.35 → 1.0`, 220 ms, `back.out`) so the number visually pops. Called twice per pop event — `cluster.length × 10` pts for the matched cluster, then `floating.length × 20` pts for any disconnected bubbles that drop.
@@ -281,8 +290,16 @@ Key behaviours:
 - `destroy()` removes `mousemove`, `click`, and `keydown` listeners.
 
 **`entities/Bubble.ts`**
-- `Bubble(color)` draws three layers: filled body circle, specular highlight (upper-left, `alpha 0.28`), rim stroke (`alpha 0.25`).
-- Colors sourced from `COLOR_HEX` in `constants.ts`.
+- `Bubble(color, special?)` — `color: BubbleColor`, `special?: SpecialType`.
+- Normal bubbles: filled body from `COLOR_HEX`, specular highlight (upper-left, `alpha 0.28`), rim stroke (`alpha 0.25`).
+- Special bubbles: filled body from `SPECIAL_COLOR_HEX`, reduced highlight (`alpha 0.22`), plus a type-specific icon drawn on top:
+  - **bomb** — short gray fuse line + orange fuse-tip circle
+  - **rainbow** — six concentric colored arcs (ROYGBV)
+  - **colorBomb** — white 5-pointed star fill
+  - **stone** — two dark crossed lines (X)
+  - **frozen** — six-armed white asterisk (snowflake)
+  - **lightning** — white Z-shaped zigzag bolt
+- Both `color` and `special` are public fields readable by the scene for game logic.
 
 **`entities/Launcher.ts`**
 - `Launcher(x, y)` — fixed position container. Draws two-ring base (outer filled, inner stroke accent).
@@ -298,11 +315,18 @@ Key behaviours:
 - **`populate(layout)`** → fills grid from a 2-D `BubbleColor | null` array.
 - **`getHexNeighbors(col, row)`** → up to 6 adjacent cells using offset-row formula: even rows shift col by −1 for upper/lower-left; odd rows shift col by +1 for upper/lower-right. Filters to valid grid bounds.
 - **`findSnapCell(px, py)`** → nearest empty cell among primary + 6 neighbours that is **connected to the grid** — candidate must be row 0 (ceiling) OR have at least one occupied hex neighbour. Returns `null` if no connected empty cell found. This prevents bubbles fired through gaps from floating in mid-air: a bubble that reaches the top through an empty column with no row-0 bubble nearby is discarded.
-- **`findCluster(col, row)`** → BFS flood-fill collecting all same-colour connected cells from the given position.
+- **`findCluster(col, row)`** → BFS flood-fill collecting all same-colour connected cells. Special rules:
+  - **stone** at start cell → returns `[]` immediately (immune).
+  - **bomb / lightning / colorBomb** at start cell → returns `[]` (scene handles these separately).
+  - **rainbow** at start cell → inherits colour from first non-special occupied neighbour; acts as wildcard in BFS (any rainbow bubble in the chain counts as matching).
+  - **frozen** bubbles with a matching colour are included in the cluster; the scene separates them for first-hit unfreeze logic.
 - **`findFloating()`** → BFS seeded from every occupied cell in row 0; returns all occupied cells NOT reachable from the top (disconnected after a pop).
 - **`removeBubble(col, row)`** → removes Pixi view, destroys it, nulls the cell. Used for instant removal (popped cluster).
 - **`extractBubble(col, row)`** → removes bubble from grid state and grid container but returns the `Bubble` object alive so the caller can animate it. Used by `animateDrop`.
 - **`getBoardColors()`** → scans all occupied cells, returns a deduplicated `BubbleColor[]` of every color currently on the board. Falls back to all 6 colors if the board is empty. Used by `sampleColor()` in the scene to ensure the launcher never produces a color that can't match anything.
+- **`getBombTargets(col, row, rings)`** → BFS out to `rings` hex steps; returns every occupied non-stone cell in range (including the starting cell itself). Used by `handleBombEffect`.
+- **`getCellsInRow(row)`** → returns coordinates of every occupied non-stone cell in the given grid row. Used by `handleLightningEffect`.
+- **`getCellsOfColor(color)`** → scans entire grid; returns coordinates of every occupied non-stone bubble whose colour matches `color`. Used by `handleColorBombEffect`.
 - **`hasBubbleBelowY(thresholdY)`** → `true` if any occupied cell's pixel y ≥ `thresholdY`. Used after each landing to detect the lose condition (bubble reached the danger line).
 - **`isEmpty()`** → `true` if no bubble remains in the grid (win condition).
 
@@ -427,6 +451,7 @@ Auth: Email provider enabled. Username stored in `auth.users.user_metadata.usern
 | Bubble Shooter — win / lose | ✓ Win on `grid.isEmpty()`; lose on `hasBubbleBelowY(dangerY)`; result overlay with GSAP animation and "PLAY AGAIN" button |
 | Bubble Shooter — next preview | ✓ `nextBubble` rendered at `launcherX + 65` with "NEXT" label; queue advances on every fire |
 | Bubble Shooter — colour sampling | ✓ `sampleColor()` calls `getBoardColors()` — only spawns colors present on the board |
+| Bubble Shooter — special bubbles | ✓ 6 types: bomb (2-ring blast), rainbow (wildcard), colorBomb (wipe a color), stone (immune), frozen (2-hit), lightning (clear row). Spawn at 15 % via `spawnBubble()` |
 | Bubble Shooter — board pressure | Optional advancing rows not yet implemented |
 
 ---

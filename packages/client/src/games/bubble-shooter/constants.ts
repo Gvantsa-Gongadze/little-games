@@ -12,6 +12,19 @@ export const MIN_AIM_ANGLE      = 18 * (Math.PI / 180)        // minimum angle f
 
 export const HUD_FONT = '"Press Start 2P"'   // CSS font-family for all in-game Text nodes
 
+export type SpecialType = 'bomb' | 'rainbow' | 'colorBomb' | 'stone' | 'frozen' | 'lightning'
+
+export const SPECIAL_SPAWN_RATE = 0.15   // 15 % chance a queued bubble is special
+
+export const SPECIAL_COLOR_HEX: Record<SpecialType, number> = {
+  bomb:      0x2c2c2c,
+  rainbow:   0xeeeeee,
+  colorBomb: 0xf4d03f,
+  stone:     0x7f8c8d,
+  frozen:    0xaed6f1,
+  lightning: 0xf7dc6f,
+}
+
 export type BubbleColor = 'red' | 'blue' | 'green' | 'yellow' | 'purple' | 'orange'
 
 export const COLOR_HEX: Record<BubbleColor, number> = {
