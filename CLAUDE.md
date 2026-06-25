@@ -158,6 +158,7 @@ interface Scene { view: Container; update(delta: number): void; destroy(): void 
 **`engine/ColyseusClient.ts`**
 - Lazy singleton `Client`. `SERVER_URL` from `VITE_SERVER_URL` env (default `ws://localhost:2567`).
 - `joinGameRoom(name)` → `client.joinOrCreate('game_room', { name })`.
+- `joinBubbleShooterRoom()` → `client.joinOrCreate('bubble_shooter_room')`.
 
 ### Asteroids Game (`games/asteroids/`)
 
@@ -248,12 +249,13 @@ SPECIAL_COLOR_HEX = { bomb: 0x2c2c2c, rainbow: 0xeeeeee, colorBomb: 0xf4d03f,
 
 **`BubbleShooterCanvas.tsx`**
 - Accepts `onGameOver?: (score, state) => void` prop (ref-stable via `onGameOverRef`).
-- Creates Pixi `Application` (dark `#0a0a1a`, antialias, `devicePixelRatio` resolution).
-- Passes a callback to `BubbleShooterScene` that (a) calls `onGameOverRef.current?.(score, state)` for external score submission and (b) sets internal `gameOver` state to show `<BubbleLeaderboardOverlay>`.
-- Mounts `BubbleShooterScene`, wires `ticker → scene.update(deltaTime)`.
-- Handles `resize` → `app.renderer.resize`.
-- Guards against destroyed-before-init with `destroyed` + `initDone` flags.
+- On mount: joins `bubble_shooter_room` via `joinBubbleShooterRoom()`, registers `room.onMessage('colors', batch => colorQueue.push(...batch))`, requests 80 initial colors (`INITIAL_REQUEST`), and awaits the first response **in parallel** with `app.init()` via `Promise.all` to minimise startup time.
+- Maintains a plain local `BubbleColor[]` queue (not Colyseus state — `ArraySchema` requires client-side schema registration to decode). Colors are consumed via `colorQueue.shift()`.
+- `getNextColor()` closure: shifts one color, sends `'request_colors'` to the server whenever the queue drops below `REFILL_AT = 8`, keeping ~20 colors buffered ahead.
+- Passes `getNextColor` as the second constructor argument to `BubbleShooterScene`.
+- Calls `room.leave()` in the cleanup function.
 - Renders `<BubbleLeaderboardOverlay>` over the canvas when `gameOver !== null`; passes `() => window.location.reload()` as `onRestart`.
+- Constants: `INITIAL_REQUEST = 80` (board 53 cells + launchers + buffer), `QUEUE_TARGET = 20`, `REFILL_AT = 8`.
 
 **`BubbleLeaderboardOverlay.tsx`**
 - Props: `score`, `state: 'won' | 'lost'`, `onRestart`.
@@ -274,6 +276,10 @@ SPECIAL_COLOR_HEX = { bomb: 0x2c2c2c, rainbow: 0xeeeeee, colorBomb: 0xf4d03f,
 | `advanceBar` | Board-pressure progress bar — rendered above everything except HUD |
 | `hudLayer` | Score panel fixed to top-right of screen (topmost Pixi layer) |
 
+Constructor: `BubbleShooterScene(app, getNextColor, onGameOver?)` — `getNextColor` is the second argument (required); `onGameOver` is optional third.
+
+Initial board: generated dynamically in the constructor using `Array.from({ length: INITIAL_ROWS }, (_, r) => Array.from({ length: grid.colsInRow(r) }, () => getNextColor()))`, then passed to `grid.populate()`. No hardcoded level layout — every game starts differently.
+
 Key fields:
 - `wallLeft` / `wallRight` — x-coordinates of the grid's left and right edges (`startX - BUBBLE_RADIUS` and `startX - BUBBLE_RADIUS + gridPixelWidth`). Bounce walls are the **grid edges**, not the screen edges — this keeps fired bubbles inside the grid's column range at all times.
 - `currentBubble` — the bubble sitting at the launcher, ready to fire.
@@ -281,17 +287,17 @@ Key fields:
 - `score` — running integer score (starts at 0).
 - `scoreText` — Pixi `Text` node inside `hudLayer`; updated and scale-bumped by `addScore()`.
 - `gameState` — `'playing' | 'won' | 'lost'`; starts `'playing'`. `handleAim` and `handleFire` both guard on this so the launcher freezes on result.
+- `getNextColor` — `() => BubbleColor` callback injected from `BubbleShooterCanvas`; called by `spawnBubble()` and `addTopRow`. All color sourcing goes through this — no internal sampling logic.
 - `onGameOver?` — `(score: number, state: 'won' | 'lost') => void` callback passed from `BubbleShooterCanvas`; called by `showResult()` to hand off to React for overlay and score submission.
 - `dangerY` — pixel y-coordinate of the danger line (`launcherY - BUBBLE_RADIUS * 4`). A red line is drawn here in the `walls` Graphics. Any bubble whose grid y ≥ `dangerY` after landing triggers a loss.
 - `advanceBar` — `Graphics` instance for the pressure-bar; redrawn on every shot via `updateAdvanceBar()`.
 - `shotsUntilAdvance` — countdown from `ADVANCE_EVERY` (8); decrements each shot, triggers `advanceBoard()` and resets to 8 when it reaches 0.
 
 Key behaviours:
-- **Bubble spawning** (`spawnBubble()`): 85 % chance → `new Bubble(sampleColor())` (normal colored bubble). 15 % chance → picks a random `SpecialType` from all 6 and returns `new Bubble(sampleColor(), type)`. Replaces all direct `new Bubble(sampleColor())` calls in the constructor and `handleFire`.
-- **Color sampling** (`sampleColor()`): calls `grid.getBoardColors()` and picks a random color from that set. Only colors currently present on the board are ever spawned — prevents unwinnable situations where the player holds a color that no longer exists on the grid. Falls back to all 6 colors if the board is empty.
+- **Bubble spawning** (`spawnBubble()`): 85 % chance → `new Bubble(getNextColor())`. 15 % chance → picks a random `SpecialType` from all 6 and returns `new Bubble(getNextColor(), type)`. Color always comes from the injected `getNextColor` callback (server-sourced), special type is decided client-side.
 - **Mouse aim** (`mousemove`): `toAimAngle()` converts pointer position to an angle clamped to `[-π + MIN_AIM_ANGLE, -MIN_AIM_ANGLE]` (always upward, never near-horizontal). Updates `Launcher.setAngle()` and sets `aimDirty = true` — does NOT call `drawAimGuide` directly (avoids rAF violation).
 - **Aim guide dirty flag**: `aimDirty` boolean; set `true` on every mouse move, cleared in `update()` after redrawing once per frame. Prevents the 38-circle Graphics redraw from firing hundreds of times per second from raw `mousemove` events.
-- **Fire** (`click`): hands `currentBubble` to `flightLayer`. Advances the queue: `nextBubble` slides to launcher position and becomes `currentBubble` (stays in `launcherLayer`, just repositioned); a new `nextBubble` is created via `sampleColor()` and added to `launcherLayer` at the preview position.
+- **Fire** (`click`): hands `currentBubble` to `flightLayer`. Advances the queue: `nextBubble` slides to launcher position and becomes `currentBubble` (stays in `launcherLayer`, just repositioned); a new `nextBubble` is created via `spawnBubble()` (which calls `getNextColor()`) and added to `launcherLayer` at the preview position.
 - **Aim guide** (`drawAimGuide`): traces dots every 16 px from barrel tip, simulating wall bounces against `wallLeft`/`wallRight`, fading out over 38 steps. Stops at `GRID_TOP_PAD`. Only called from `update()`, never from event handlers.
 - **Physics** (`update(delta)`): advances position; reflects `vx` off `wallLeft` / `wallRight` using `Math.abs` (prevents tunnelling).
 - **Landing triggers**: `shouldLand = true` when (a) `y - BUBBLE_RADIUS ≤ GRID_TOP_PAD` (top boundary), OR (b) any nearby occupied grid cell is within `2 × BUBBLE_RADIUS` of the bubble centre (checks `pixelToCell` + 6 hex neighbours each frame).
@@ -304,7 +310,7 @@ Key behaviours:
 - **`animateDrop(cells)`**: for each floating cell calls `grid.extractBubble()` (keeps view alive), moves view into `dropLayer`, then runs a GSAP tween — falls 520 px with `power2.in` easing, fades to alpha 0, slight random horizontal drift (±20 px) and stagger delay (0–80 ms) per bubble so cascades look natural. `onComplete` removes and destroys the view.
 - **Scoring** (`addScore(points)`): adds to `this.score`, updates `scoreText.text`, fires a GSAP scale-bounce (`1.35 → 1.0`, 220 ms, `back.out`) so the number visually pops. Called twice per pop event — `cluster.length × 10` pts for the matched cluster, then `floating.length × 20` pts for any disconnected bubbles that drop.
 - **HUD panel**: right-anchored `Text` objects (`anchor.set(1, 0)`) at `x = W - 14` so the score grows leftward as digits increase. "SCORE" label at 9 px (`#6699aa`), value at 15 px (`#ff6eb4`, game accent pink). Dark near-black background rect (`W - 190` to `W`, full `GRID_TOP_PAD` height) with left + bottom border strokes for definition.
-- **Board-pressure advance** (`advanceBoard()`): called from `handleFire` when `shotsUntilAdvance` hits 0. Snaps `grid.container.y = -ROW_SPACING` (moves grid up visually), calls `grid.addTopRow(() => sampleColor())` (shifts all row data down by 1 and inserts a new row 0 with board-sampled colours, repositioning all bubble views), then GSAP animates `container.y → 0` over 0.45 s (`power2.inOut`) so the new row slides in from above and existing bubbles slide down. `onComplete` checks `hasBubbleBelowY(dangerY)` for a lose. Guarded by `gameState !== 'playing'`. Uses `gsap.killTweensOf(grid.container)` before each advance to prevent tween conflicts.
+- **Board-pressure advance** (`advanceBoard()`): called from `handleFire` when `shotsUntilAdvance` hits 0. Snaps `grid.container.y = -ROW_SPACING` (moves grid up visually), calls `grid.addTopRow(() => getNextColor())` (shifts all row data down by 1 and inserts a new row 0 with server-sourced colours, repositioning all bubble views), then GSAP animates `container.y → 0` over 0.45 s (`power2.inOut`) so the new row slides in from above and existing bubbles slide down. `onComplete` checks `hasBubbleBelowY(dangerY)` for a lose. Guarded by `gameState !== 'playing'`. Uses `gsap.killTweensOf(grid.container)` before each advance to prevent tween conflicts.
 - **Pressure bar** (`updateAdvanceBar()`): clears and redraws `advanceBar` Graphics on every shot. Bar position: `y = GRID_TOP_PAD - BUBBLE_RADIUS - h - 2` (12 px from top of canvas) so it is always above the topmost bubble edge (`GRID_TOP_PAD - BUBBLE_RADIUS = 20`). Design: 6 px tall dark background track (full grid width) + colour-coded progress fill (blue → orange at 50 % → red at 75 %) + 7 tick-mark dividers (one per shot interval) + top border line. Rendered on the `advanceBar` layer which sits above `launcherLayer` so it is never obscured by bubbles.
 - **One bubble in the air at a time** — `handleFire` returns early if `inFlight` is not null.
 - `destroy()` removes `mousemove`, `click`, and `keydown` listeners.
@@ -327,13 +333,14 @@ Key behaviours:
 
 **`managers/GridManager.ts`**
 - Owns the grid state as `GridCell[][] = { bubble: Bubble | null }`.
-- **`colsInRow(row)`** → `COLS` (11) for even rows, `COLS - 1` (10) for odd rows.
-- **`cellToPixel(col, row)`** → `{ x, y }`: even rows unshifted; odd rows shifted right by `BUBBLE_RADIUS`.
-- **`pixelToCell(px, py)`** → `{ col, row }`: inverse of above; clamps to valid bounds.
+- **`rowPhase`** (`private rowPhase = 0`) — tracks how many rows have been prepended via `addTopRow`. Every function that depends on even/odd row parity uses `(row + rowPhase) % 2` instead of `row % 2` directly, so parity stays correct after each board-pressure advance.
+- **`colsInRow(row)`** → `(row + rowPhase) % 2 === 0 ? COLS : COLS - 1` — even-phase rows have 11 cols, odd-phase rows have 10.
+- **`cellToPixel(col, row)`** → `{ x, y }`: odd-phase rows shifted right by `BUBBLE_RADIUS`, even-phase rows unshifted.
+- **`pixelToCell(px, py)`** → `{ col, row }`: inverse of above; uses `rowPhase` offset before rounding; clamps to valid bounds.
 - **`getCell(col, row)`** → `GridCell | null`.
 - **`place(col, row, bubble)`** → positions bubble view and adds to `container`. Creates the row array if it doesn't exist yet (handles bubbles landing below the initial grid).
 - **`populate(layout)`** → fills grid from a 2-D `BubbleColor | null` array.
-- **`getHexNeighbors(col, row)`** → up to 6 adjacent cells using offset-row formula: even rows shift col by −1 for upper/lower-left; odd rows shift col by +1 for upper/lower-right. Filters to valid grid bounds.
+- **`getHexNeighbors(col, row)`** → up to 6 adjacent cells using offset-row formula with `rowPhase`: `const isOdd = (row + rowPhase) % 2 === 1`. Even-phase rows shift col by −1 for upper/lower-left; odd-phase rows shift col by +1 for upper/lower-right. Filters to valid grid bounds.
 - **`findSnapCell(px, py)`** → nearest empty cell among primary + 6 neighbours that is **connected to the grid** — candidate must be row 0 (ceiling) OR have at least one occupied hex neighbour. Returns `null` if no connected empty cell found. This prevents bubbles fired through gaps from floating in mid-air: a bubble that reaches the top through an empty column with no row-0 bubble nearby is discarded.
 - **`findCluster(col, row)`** → BFS flood-fill collecting all same-colour connected cells. Special rules:
   - **stone** at start cell → returns `[]` immediately (immune).
@@ -343,16 +350,16 @@ Key behaviours:
 - **`findFloating()`** → BFS seeded from every occupied cell in row 0; returns all occupied cells NOT reachable from the top (disconnected after a pop).
 - **`removeBubble(col, row)`** → removes Pixi view, destroys it, nulls the cell. Used for instant removal (popped cluster).
 - **`extractBubble(col, row)`** → removes bubble from grid state and grid container but returns the `Bubble` object alive so the caller can animate it. Used by `animateDrop`.
-- **`getBoardColors()`** → scans all occupied cells, returns a deduplicated `BubbleColor[]` of every color currently on the board. Falls back to all 6 colors if the board is empty. Used by `sampleColor()` in the scene to ensure the launcher never produces a color that can't match anything.
+- **`getBoardColors()`** → scans all occupied cells, returns a deduplicated `BubbleColor[]` of every color currently on the board. Falls back to an empty array (server handles the fallback to all 6 colors). Called by `BubbleShooterCanvas` when sending `'request_colors'` to the server so the server biases new bubbles toward colors already on the board.
 - **`getBombTargets(col, row, rings)`** → BFS out to `rings` hex steps; returns every occupied non-stone cell in range (including the starting cell itself). Used by `handleBombEffect`.
 - **`getCellsInRow(row)`** → returns coordinates of every occupied non-stone cell in the given grid row. Used by `handleLightningEffect`.
 - **`getCellsOfColor(color)`** → scans entire grid; returns coordinates of every occupied non-stone bubble whose colour matches `color`. Used by `handleColorBombEffect`.
 - **`hasBubbleBelowY(thresholdY)`** → `true` if any occupied cell's pixel y ≥ `thresholdY`. Used after each landing to detect the lose condition (bubble reached the danger line).
 - **`isEmpty()`** → `true` if no bubble remains in the grid (win condition).
-- **`addTopRow(getColor)`** → board-pressure advance. Shifts every existing row down by 1 in the `grid[][]` array (iterates end→start to avoid reference aliasing), repositions all shifted bubbles to their new `cellToPixel(c, r)` positions, then creates a fresh row 0 by calling `getColor()` for each cell and adding the new `Bubble` views to `container`. The scene offsets `container.y = -ROW_SPACING` before calling this so that visually the grid is unchanged; animating `container.y → 0` afterward creates the slide-in effect.
+- **`addTopRow(getColor)`** → board-pressure advance. Shifts every existing row down by 1 in the `grid[][]` array (iterates end→start to avoid reference aliasing), repositions all shifted bubbles to their new `cellToPixel(c, r)` positions, then **flips `rowPhase = (rowPhase + 1) % 2`** so that all parity-dependent functions remain correct after the shift, then creates a fresh row 0 by calling `getColor()` for each cell and adding the new `Bubble` views to `container`. The scene offsets `container.y = -ROW_SPACING` before calling this so that visually the grid is unchanged; animating `container.y → 0` afterward creates the slide-in effect.
 
 **`data/levels.ts`**
-- `LEVEL_1`: 5-row starter layout. Even rows: 11 cols; odd rows: 10 cols (offset row, no trailing element).
+- `LEVEL_1`: 5-row hardcoded starter layout. **Dead code** — no longer imported anywhere. The initial board is now generated dynamically via `getNextColor()` in `BubbleShooterScene`.
 
 ### Auth & Data (`lib/`, `hooks/`)
 
@@ -387,6 +394,19 @@ VITE_SUPABASE_ANON_KEY=<anon-key>
 - CORS: `ALLOWED_ORIGINS` env var (comma-separated, default `http://localhost:5173`).
 - `GET /health` → `{ status: 'ok' }`.
 - Registers `game_room` → `GameRoom`.
+- Registers `bubble_shooter_room` → `BubbleShooterRoom`.
+
+**`rooms/BubbleShooterRoom.ts`**
+- `maxClients = 1` — single-player room.
+- Stateless: no `RoomState` schema. Communication is purely message-based.
+- Handles `'request_colors'` message `{ count: number; boardColors: string[] }`:
+  - If `boardColors` is non-empty, samples from it (biases toward colors already on the board).
+  - Otherwise samples from `ALL_COLORS` (`red | blue | green | yellow | purple | orange`).
+  - Responds with `client.send('colors', string[])`.
+
+**`schema/BubbleShooterState.ts`**
+- Defines `BubbleShooterState extends Schema` with `@type(['string']) colorQueue = new ArraySchema<string>()`.
+- **Dead code** — not used. `ArraySchema` patches require matching schema registration on the client side; switched to plain message-based approach instead.
 
 **`rooms/GameRoom.ts`**
 - `maxClients = 4`.
@@ -471,7 +491,7 @@ Auth: Email provider enabled. Username stored in `auth.users.user_metadata.usern
 | Bubble Shooter — scoring | ✓ `addScore()` — cluster pop ×10 pts, floating drop ×20 pts; HUD panel top-right with scale-bounce animation |
 | Bubble Shooter — win / lose | ✓ Win on `grid.isEmpty()`; lose on `hasBubbleBelowY(dangerY)`; calls `onGameOver(score, state)` → React shows `<BubbleLeaderboardOverlay>` |
 | Bubble Shooter — next preview | ✓ `nextBubble` rendered at `launcherX + 65` with "NEXT" label; queue advances on every fire |
-| Bubble Shooter — colour sampling | ✓ `sampleColor()` calls `getBoardColors()` — only spawns colors present on the board |
+| Bubble Shooter — colour sourcing | ✓ Server-driven via `BubbleShooterRoom`. Client sends `'request_colors'` with current `boardColors`; server biases selection toward those colors. Client maintains a local queue consumed by `getNextColor()`. |
 | Bubble Shooter — special bubbles | ✓ 6 types: bomb (2-ring blast), rainbow (wildcard), colorBomb (wipe a color), stone (immune), frozen (2-hit), lightning (clear row). Spawn at 15 % via `spawnBubble()` |
 | Bubble Shooter — board pressure | ✓ New row slides in from top every 8 shots (`ADVANCE_EVERY`). Progress bar (above bubbles, z-ordered above launcherLayer) shows countdown with colour ramp and per-shot tick marks |
 | Bubble Shooter — leaderboard | ✓ `BubbleLeaderboardOverlay` (pink `#ff6eb4` accent, top 10, current user highlighted yellow). `pages/BubbleShooter.tsx` submits score via `submitScore('bubble-shooter', …)`. |
