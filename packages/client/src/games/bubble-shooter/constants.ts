@@ -1,9 +1,14 @@
-export const BUBBLE_RADIUS  = 20
-export const COL_SPACING    = BUBBLE_RADIUS * 2          // 40px  centre-to-centre horizontal
-export const ROW_SPACING    = BUBBLE_RADIUS * Math.sqrt(3) // ≈34.6px centre-to-centre vertical
-export const COLS           = 11                          // bubbles per even row
-export const INITIAL_ROWS   = 5                           // rows pre-filled at level start
-export const GRID_TOP_PAD   = 40                          // px from top of canvas to row 0
+export const BUBBLE_RADIUS      = 20
+export const COL_SPACING        = BUBBLE_RADIUS * 2            // 40px  centre-to-centre horizontal
+export const ROW_SPACING        = BUBBLE_RADIUS * Math.sqrt(3) // ≈34.6px centre-to-centre vertical
+export const COLS               = 11                           // bubbles per even row
+export const INITIAL_ROWS       = 5                            // rows pre-filled at level start
+export const GRID_TOP_PAD       = 40                           // px from top of canvas to row 0
+
+export const BUBBLE_SPEED       = 12                           // px per frame at deltaTime=1
+export const LAUNCHER_Y_OFFSET  = 70                           // px from bottom of screen to launcher centre
+export const BARREL_LENGTH      = 44                           // px from launcher centre to barrel tip
+export const MIN_AIM_ANGLE      = 18 * (Math.PI / 180)        // minimum angle from horizontal (prevents near-horizontal shots)
 
 export type BubbleColor = 'red' | 'blue' | 'green' | 'yellow' | 'purple' | 'orange'
 
