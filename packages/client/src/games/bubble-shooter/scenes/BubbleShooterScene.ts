@@ -37,7 +37,8 @@ export class BubbleShooterScene implements Scene {
   private launcherY: number
   private wallLeft:  number   // left bounce wall  = left edge of grid
   private wallRight: number   // right bounce wall = right edge of grid
-  private aimAngle = -Math.PI / 2   // straight up
+  private aimAngle  = -Math.PI / 2   // straight up
+  private aimDirty  = true           // redraw guide once per frame, not per mousemove
 
   private boundMouseMove: (e: MouseEvent) => void
   private boundClick:     (e: MouseEvent) => void
@@ -88,7 +89,6 @@ export class BubbleShooterScene implements Scene {
     window.addEventListener('mousemove', this.boundMouseMove)
     window.addEventListener('click',     this.boundClick)
 
-    this.drawAimGuide()
   }
 
   private toAimAngle(mx: number, my: number): number {
@@ -101,7 +101,7 @@ export class BubbleShooterScene implements Scene {
     if (my >= this.launcherY) return
     this.aimAngle = this.toAimAngle(mx, my)
     this.launcher.setAngle(this.aimAngle)
-    this.drawAimGuide()
+    this.aimDirty = true   // guide redraws in update(), not here
   }
 
   private handleFire(mx: number, my: number) {
@@ -164,6 +164,12 @@ export class BubbleShooterScene implements Scene {
   }
 
   update(delta: number) {
+    // Redraw aim guide at most once per frame regardless of mousemove rate
+    if (this.aimDirty) {
+      this.drawAimGuide()
+      this.aimDirty = false
+    }
+
     if (!this.inFlight) return
 
     const f = this.inFlight

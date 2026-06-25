@@ -255,9 +255,10 @@ Key fields:
 - `wallLeft` / `wallRight` — x-coordinates of the grid's left and right edges (`startX - BUBBLE_RADIUS` and `startX - BUBBLE_RADIUS + gridPixelWidth`). Bounce walls are the **grid edges**, not the screen edges — this keeps fired bubbles inside the grid's column range at all times.
 
 Key behaviours:
-- **Mouse aim** (`mousemove`): `toAimAngle()` converts pointer position to an angle clamped to `[-π + MIN_AIM_ANGLE, -MIN_AIM_ANGLE]` (always upward, never near-horizontal). Updates `Launcher.setAngle()` and redraws aim guide.
+- **Mouse aim** (`mousemove`): `toAimAngle()` converts pointer position to an angle clamped to `[-π + MIN_AIM_ANGLE, -MIN_AIM_ANGLE]` (always upward, never near-horizontal). Updates `Launcher.setAngle()` and sets `aimDirty = true` — does NOT call `drawAimGuide` directly (avoids rAF violation).
+- **Aim guide dirty flag**: `aimDirty` boolean; set `true` on every mouse move, cleared in `update()` after redrawing once per frame. Prevents the 38-circle Graphics redraw from firing hundreds of times per second from raw `mousemove` events.
 - **Fire** (`click`): hands `currentBubble` to `flightLayer` with velocity `(cos θ × SPEED, sin θ × SPEED)`. Creates a new `currentBubble` preview at launcher.
-- **Aim guide** (`drawAimGuide`): traces dots every 16 px from barrel tip, simulating wall bounces against `wallLeft`/`wallRight`, fading out over 38 steps. Stops at `GRID_TOP_PAD`.
+- **Aim guide** (`drawAimGuide`): traces dots every 16 px from barrel tip, simulating wall bounces against `wallLeft`/`wallRight`, fading out over 38 steps. Stops at `GRID_TOP_PAD`. Only called from `update()`, never from event handlers.
 - **Physics** (`update(delta)`): advances position; reflects `vx` off `wallLeft` / `wallRight` using `Math.abs` (prevents tunnelling).
 - **Landing triggers**: `shouldLand = true` when (a) `y - BUBBLE_RADIUS ≤ GRID_TOP_PAD` (top boundary), OR (b) any nearby occupied grid cell is within `2 × BUBBLE_RADIUS` of the bubble centre (checks `pixelToCell` + 6 hex neighbours each frame).
 - **`landBubble(bubble, px, py)`**: removes bubble from `flightLayer`, calls `grid.findSnapCell()`, places bubble at snapped cell, runs `findCluster()` — if ≥ 3 same-colour bubbles, pops all of them (instant `removeBubble`) then calls `findFloating()` + `animateDrop()` for disconnected bubbles. Discards bubble if no empty snap cell found.
