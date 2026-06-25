@@ -12,6 +12,8 @@ export const MIN_AIM_ANGLE      = 18 * (Math.PI / 180)        // minimum angle f
 
 export const HUD_FONT = '"Press Start 2P"'   // CSS font-family for all in-game Text nodes
 
+export const ADVANCE_EVERY = 8   // shots fired between each board-pressure row advance
+
 export type SpecialType = 'bomb' | 'rainbow' | 'colorBomb' | 'stone' | 'frozen' | 'lightning'
 
 export const SPECIAL_SPAWN_RATE = 0.15   // 15 % chance a queued bubble is special

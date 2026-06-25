@@ -301,4 +301,39 @@ export class GridManager {
     }
     return result
   }
+
+  // Shift every existing row down by 1 and prepend a freshly generated row at the top.
+  // Caller should offset the container by -ROW_SPACING before calling, then animate it
+  // back to y=0 so the new row slides in from above and existing rows slide down.
+  addTopRow(getColor: () => BubbleColor): void {
+    const oldLength = this.grid.length
+
+    // Shift row references downward (iterate end→start to avoid reference aliasing)
+    for (let r = oldLength - 1; r >= 0; r--) {
+      this.grid[r + 1] = this.grid[r]
+    }
+
+    // Reposition all shifted bubbles to their new (row+1) pixel positions
+    for (let r = 1; r <= oldLength; r++) {
+      if (!this.grid[r]) continue
+      for (let c = 0; c < this.grid[r].length; c++) {
+        const b = this.grid[r][c]?.bubble
+        if (!b) continue
+        const { x, y } = this.cellToPixel(c, r)
+        b.view.x = x
+        b.view.y = y
+      }
+    }
+
+    // Create the new row 0 (overwrite the aliased reference left by the shift)
+    const cols = this.colsInRow(0)
+    this.grid[0] = Array.from({ length: cols }, (_, c) => {
+      const bubble = new Bubble(getColor())
+      const { x, y } = this.cellToPixel(c, 0)
+      bubble.view.x = x
+      bubble.view.y = y
+      this.container.addChild(bubble.view)
+      return { bubble }
+    })
+  }
 }

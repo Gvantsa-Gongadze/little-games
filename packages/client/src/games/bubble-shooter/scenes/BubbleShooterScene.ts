@@ -6,9 +6,9 @@ import { GridManager } from '../managers/GridManager'
 import { Launcher }    from '../entities/Launcher'
 import { Bubble }      from '../entities/Bubble'
 import {
-  BUBBLE_RADIUS, COL_SPACING, COLS, GRID_TOP_PAD, HUD_FONT,
+  BUBBLE_RADIUS, COL_SPACING, COLS, GRID_TOP_PAD, HUD_FONT, ROW_SPACING,
   BUBBLE_SPEED, LAUNCHER_Y_OFFSET, BARREL_LENGTH, MIN_AIM_ANGLE,
-  SPECIAL_SPAWN_RATE,
+  SPECIAL_SPAWN_RATE, ADVANCE_EVERY,
   type BubbleColor, type SpecialType,
 } from '../constants'
 import { LEVEL_1 } from '../data/levels'
@@ -46,6 +46,9 @@ export class BubbleShooterScene implements Scene {
   private wallRight: number   // right bounce wall = right edge of grid
   private aimAngle  = -Math.PI / 2   // straight up
   private aimDirty  = true           // redraw guide once per frame, not per mousemove
+
+  private advanceBar         = new Graphics()
+  private shotsUntilAdvance  = ADVANCE_EVERY
 
   private boundMouseMove: (e: MouseEvent) => void
   private boundClick:     (e: MouseEvent) => void
@@ -133,9 +136,11 @@ export class BubbleShooterScene implements Scene {
 
     hudLayer.addChild(panelBg, scoreLbl, this.scoreText)
 
+    this.updateAdvanceBar()
+
     this.view.addChild(
       this.gridLayer, this.flightLayer, this.dropLayer,
-      walls, bar, this.launcherLayer, hudLayer,
+      walls, bar, this.launcherLayer, this.advanceBar, hudLayer,
       this.overlayLayer,
     )
 
@@ -204,6 +209,14 @@ export class BubbleShooterScene implements Scene {
     this.nextBubble.view.x = this.launcherX + 65
     this.nextBubble.view.y = this.launcherY
     this.launcherLayer.addChild(this.nextBubble.view)
+
+    // Shot counter — trigger a board-pressure advance every ADVANCE_EVERY shots
+    this.shotsUntilAdvance--
+    if (this.shotsUntilAdvance <= 0) {
+      this.shotsUntilAdvance = ADVANCE_EVERY
+      this.advanceBoard()
+    }
+    this.updateAdvanceBar()
   }
 
   private drawAimGuide() {
@@ -285,6 +298,52 @@ export class BubbleShooterScene implements Scene {
       this.inFlight = null
       this.landBubble(f.bubble, f.bubble.view.x, f.bubble.view.y)
     }
+  }
+
+  private updateAdvanceBar() {
+    this.advanceBar.clear()
+
+    const totalW   = this.wallRight - this.wallLeft
+    const progress = 1 - this.shotsUntilAdvance / ADVANCE_EVERY
+    const h        = 6
+    // Keep the bar above the topmost bubble edge (GRID_TOP_PAD - BUBBLE_RADIUS) with a 2 px gap
+    const y        = GRID_TOP_PAD - BUBBLE_RADIUS - h - 2
+
+    // Dark background track so the bar is visible even when empty
+    this.advanceBar.rect(this.wallLeft, y, totalW, h).fill({ color: 0x060d13, alpha: 0.9 })
+
+    // Colour-coded fill: blue → orange → red as pressure grows
+    if (progress > 0) {
+      const color = progress > 0.75 ? 0xff3333 : progress > 0.5 ? 0xff9933 : 0x33aaff
+      this.advanceBar.rect(this.wallLeft, y, totalW * progress, h).fill({ color, alpha: 0.9 })
+    }
+
+    // Segment dividers — one tick per shot so the player can count down
+    for (let i = 1; i < ADVANCE_EVERY; i++) {
+      const x = this.wallLeft + (totalW / ADVANCE_EVERY) * i
+      this.advanceBar.moveTo(x, y).lineTo(x, y + h).stroke({ color: 0x000000, alpha: 0.45, width: 1 })
+    }
+
+    // Top border line for definition
+    this.advanceBar.moveTo(this.wallLeft, y).lineTo(this.wallRight, y).stroke({ color: 0x3388aa, alpha: 0.35, width: 1 })
+  }
+
+  private advanceBoard() {
+    if (this.gameState !== 'playing') return
+    // Offset the grid container upward so that after repositioning all bubbles
+    // to their new (shifted-down) positions the grid is visually unchanged.
+    // Animating container.y back to 0 creates the slide-in effect.
+    gsap.killTweensOf(this.grid.container)
+    this.grid.container.y = -ROW_SPACING
+    this.grid.addTopRow(() => this.sampleColor())
+    gsap.to(this.grid.container, {
+      y: 0,
+      duration: 0.45,
+      ease: 'power2.inOut',
+      onComplete: () => {
+        if (this.grid.hasBubbleBelowY(this.dangerY)) this.showResult('lost')
+      },
+    })
   }
 
   private spawnBubble(): Bubble {
