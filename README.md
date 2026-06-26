@@ -109,7 +109,7 @@ SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key>
 create table scores (
   id         uuid        primary key default gen_random_uuid(),
   user_id    uuid        references auth.users not null,
-  game       text        not null,
+  game       text        not null,   -- 'asteroids' | 'bubble-shooter' | '2d-game' | '3d-cube'
   score      integer     not null,
   username   text,
   created_at timestamptz default now()

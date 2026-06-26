@@ -20,11 +20,9 @@ export class GameRoom extends Room<GameState> {
     const player = new Player()
     player.name = options?.name ?? `Player ${this.clients.length}`
     this.state.players.set(client.sessionId, player)
-    console.log(`${player.name} joined`)
   }
 
   onLeave(client: Client) {
     this.state.players.delete(client.sessionId)
-    console.log(`${client.sessionId} left`)
   }
 }

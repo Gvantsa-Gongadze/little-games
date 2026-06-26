@@ -362,9 +362,6 @@ Key behaviours:
 - **`isEmpty()`** → `true` if no bubble remains in the grid (win condition).
 - **`addTopRow(getColor)`** → board-pressure advance. Shifts every existing row down by 1 in the `grid[][]` array (iterates end→start to avoid reference aliasing), repositions all shifted bubbles to their new `cellToPixel(c, r)` positions, then **flips `rowPhase = (rowPhase + 1) % 2`** so that all parity-dependent functions remain correct after the shift, then creates a fresh row 0 by calling `getColor()` for each cell and adding the new `Bubble` views to `container`. The scene offsets `container.y = -ROW_SPACING` before calling this so that visually the grid is unchanged; animating `container.y → 0` afterward creates the slide-in effect.
 
-**`data/levels.ts`**
-- `LEVEL_1`: 5-row hardcoded starter layout. **Dead code** — no longer imported anywhere. The initial board is now generated dynamically via `getNextColor()` in `BubbleShooterScene`.
-
 ### Auth & Data (`lib/`, `hooks/`)
 
 **`lib/supabase.ts`** — `createClient(VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY)` singleton.
@@ -407,10 +404,6 @@ VITE_SUPABASE_ANON_KEY=<anon-key>
   - If `boardColors` is non-empty, samples from it (biases toward colors already on the board).
   - Otherwise samples from `ALL_COLORS` (`red | blue | green | yellow | purple | orange`).
   - Responds with `client.send('colors', string[])`.
-
-**`schema/BubbleShooterState.ts`**
-- Defines `BubbleShooterState extends Schema` with `@type(['string']) colorQueue = new ArraySchema<string>()`.
-- **Dead code** — not used. `ArraySchema` patches require matching schema registration on the client side; switched to plain message-based approach instead.
 
 **`rooms/GameRoom.ts`**
 - `maxClients = 4`.
@@ -459,7 +452,7 @@ Plain interfaces for type-sharing. **Not currently imported anywhere** — dead 
 create table scores (
   id         uuid        primary key default gen_random_uuid(),
   user_id    uuid        references auth.users not null,
-  game       text        not null,   -- 'asteroids' | '2d-game' | '3d-cube'
+  game       text        not null,   -- 'asteroids' | 'bubble-shooter' | '2d-game' | '3d-cube'
   score      integer     not null,
   username   text,                   -- from user_metadata at submit time; nullable
   created_at timestamptz default now()
