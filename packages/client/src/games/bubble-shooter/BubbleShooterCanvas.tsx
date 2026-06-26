@@ -37,11 +37,13 @@ export default function BubbleShooterCanvas({ onGameOver }: Props) {
       // Plain local array — filled by 'colors' messages from the server.
       // No Colyseus schema decoding needed; server sends plain string arrays.
       const colorQueue: BubbleColor[] = []
+      let refillPending = false
       let scene: BubbleShooterScene | null = null
       let resolveInitial: (() => void) | null = null
 
       room.onMessage('colors', (batch: string[]) => {
         colorQueue.push(...(batch as BubbleColor[]))
+        refillPending = false
         // Unblock the scene-creation await on the very first response
         if (resolveInitial) { resolveInitial(); resolveInitial = null }
       })
@@ -70,8 +72,8 @@ export default function BubbleShooterCanvas({ onGameOver }: Props) {
       mountRef.current.appendChild(app.canvas)
 
       const getNextColor = (): BubbleColor => {
-        // Refill whenever the look-ahead buffer drops below the threshold
-        if (colorQueue.length < REFILL_AT) {
+        if (!refillPending && colorQueue.length < REFILL_AT) {
+          refillPending = true
           const boardColors = scene?.grid.getBoardColors() ?? []
           room!.send('request_colors', { count: QUEUE_TARGET, boardColors })
         }
