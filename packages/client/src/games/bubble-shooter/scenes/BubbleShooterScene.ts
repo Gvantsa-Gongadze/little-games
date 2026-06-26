@@ -9,6 +9,7 @@ import {
   BUBBLE_RADIUS, COL_SPACING, COLS, GRID_TOP_PAD, HUD_FONT, ROW_SPACING,
   BUBBLE_SPEED, LAUNCHER_Y_OFFSET, BARREL_LENGTH, MIN_AIM_ANGLE,
   SPECIAL_SPAWN_RATE, ADVANCE_EVERY, INITIAL_ROWS,
+  COLOR_HEX, SPECIAL_COLOR_HEX,
   type BubbleColor, type SpecialType,
 } from '../constants'
 
@@ -21,6 +22,7 @@ export class BubbleShooterScene implements Scene {
   private gridLayer     = new Container()
   private flightLayer   = new Container()
   private dropLayer     = new Container()   // falling bubbles after disconnect
+  private popLayer      = new Container()   // pop explosion animations
   private launcherLayer = new Container()
 
   readonly grid:     GridManager
@@ -145,7 +147,7 @@ export class BubbleShooterScene implements Scene {
     this.updateAdvanceBar()
 
     this.view.addChild(
-      this.gridLayer, this.flightLayer, this.dropLayer,
+      this.gridLayer, this.flightLayer, this.dropLayer, this.popLayer,
       walls, bar, this.launcherLayer, this.advanceBar, hudLayer,
     )
 
@@ -395,7 +397,7 @@ export class BubbleShooterScene implements Scene {
 
       if (toPop.length >= 3) {
         this.addScore(toPop.length * 10)
-        for (const c of toPop) this.grid.removeBubble(c.col, c.row)
+        this.animatePop(toPop)
         const floating = this.grid.findFloating()
         if (floating.length > 0) this.addScore(floating.length * 20)
         this.animateDrop(floating)
@@ -409,7 +411,7 @@ export class BubbleShooterScene implements Scene {
   private handleBombEffect(col: number, row: number) {
     const targets = this.grid.getBombTargets(col, row, 2)
     this.addScore(targets.length * 15)
-    for (const t of targets) this.grid.removeBubble(t.col, t.row)
+    this.animatePop(targets)
     const floating = this.grid.findFloating()
     if (floating.length > 0) this.addScore(floating.length * 20)
     this.animateDrop(floating)
@@ -420,7 +422,7 @@ export class BubbleShooterScene implements Scene {
   private handleLightningEffect(_col: number, row: number) {
     const targets = this.grid.getCellsInRow(row)
     this.addScore(targets.length * 15)
-    for (const t of targets) this.grid.removeBubble(t.col, t.row)
+    this.animatePop(targets)
     const floating = this.grid.findFloating()
     if (floating.length > 0) this.addScore(floating.length * 20)
     this.animateDrop(floating)
@@ -436,14 +438,14 @@ export class BubbleShooterScene implements Scene {
     })
 
     // Remove the color bomb itself first
-    this.grid.removeBubble(col, row)
+    this.animatePop([{ col, row }])
 
     if (neighbor) {
       const targetColor = this.grid.getCell(neighbor.col, neighbor.row)?.bubble?.color
       if (targetColor) {
         const targets = this.grid.getCellsOfColor(targetColor)
         this.addScore(targets.length * 15)
-        for (const t of targets) this.grid.removeBubble(t.col, t.row)
+        this.animatePop(targets)
         const floating = this.grid.findFloating()
         if (floating.length > 0) this.addScore(floating.length * 20)
         this.animateDrop(floating)
@@ -483,6 +485,58 @@ export class BubbleShooterScene implements Scene {
           bubble.view.destroy()
         },
       })
+    }
+  }
+
+  private animatePop(cells: { col: number; row: number }[]) {
+    for (const c of cells) {
+      const bubble = this.grid.extractBubble(c.col, c.row)
+      if (!bubble) continue
+
+      const x = bubble.view.x
+      const y = bubble.view.y
+      bubble.view.destroy()  // replaced instantly by particles
+
+      const delay = Math.random() * 0.04
+      const color = bubble.special ? SPECIAL_COLOR_HEX[bubble.special] : COLOR_HEX[bubble.color]
+
+      // Expanding ring shockwave
+      const ring = new Graphics()
+      ring.circle(0, 0, BUBBLE_RADIUS * 0.75).stroke({ color, width: 2 })
+      ring.x = x
+      ring.y = y
+      this.popLayer.addChild(ring)
+      gsap.to(ring.scale, { x: 1.8, y: 1.8, duration: 0.2, delay, ease: 'power2.out' })
+      gsap.to(ring, {
+        alpha: 0, duration: 0.2, delay, ease: 'power1.in',
+        onComplete: () => { this.popLayer.removeChild(ring); ring.destroy() },
+      })
+
+      // 12 radial particles — varying size, speed, and duration
+      for (let i = 0; i < 12; i++) {
+        const angle    = (i / 12) * Math.PI * 2 + (Math.random() - 0.5) * 0.5
+        const speed    = 16 + Math.random() * 18
+        const radius   = 1.5 + Math.random() * 2
+        const duration = 0.22 + Math.random() * 0.12
+
+        const p = new Graphics()
+        p.circle(0, 0, radius).fill({ color })
+        p.x = x
+        p.y = y
+        this.popLayer.addChild(p)
+
+        // shrink as they travel so they trail off into nothing
+        gsap.to(p.scale, { x: 0.15, y: 0.15, duration, delay, ease: 'power2.in' })
+        gsap.to(p, {
+          x: x + Math.cos(angle) * speed,
+          y: y + Math.sin(angle) * speed,
+          alpha: 0,
+          duration,
+          delay,
+          ease: 'power2.out',
+          onComplete: () => { this.popLayer.removeChild(p); p.destroy() },
+        })
+      }
     }
   }
 
