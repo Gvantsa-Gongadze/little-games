@@ -55,7 +55,7 @@ export class Bubble {
 
       case 'colorBomb': {
         // 5-pointed star
-        const pts: number[][] = []
+        const pts: [number, number][] = []
         for (let i = 0; i < 10; i++) {
           const a  = (i * Math.PI) / 5 - Math.PI / 2
           const ri = i % 2 === 0 ? r * 0.55 : r * 0.22

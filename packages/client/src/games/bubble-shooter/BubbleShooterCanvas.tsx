@@ -28,7 +28,8 @@ export default function BubbleShooterCanvas({ onGameOver }: Props) {
     let destroyed = false
     let initDone  = false
     let onResize: (() => void) | null = null
-    let room: Room | null = null
+    let room:     Room | null = null
+    let scene:    BubbleShooterScene | null = null
 
     async function init() {
       room = await joinBubbleShooterRoom()
@@ -38,7 +39,6 @@ export default function BubbleShooterCanvas({ onGameOver }: Props) {
       // No Colyseus schema decoding needed; server sends plain string arrays.
       const colorQueue: BubbleColor[] = []
       let refillPending = false
-      let scene: BubbleShooterScene | null = null
       let resolveInitial: (() => void) | null = null
 
       room.onMessage('colors', (batch: string[]) => {
@@ -80,12 +80,13 @@ export default function BubbleShooterCanvas({ onGameOver }: Props) {
         return colorQueue.shift() ?? 'blue'
       }
 
-      scene = new BubbleShooterScene(app, getNextColor, (score, state) => {
+      const s = new BubbleShooterScene(app, getNextColor, (score, state) => {
         onGameOverRef.current?.(score, state)
         setGameOver({ score, state })
       })
-      app.stage.addChild(scene.view)
-      app.ticker.add(ticker => scene.update(ticker.deltaTime))
+      scene = s
+      app.stage.addChild(s.view)
+      app.ticker.add(ticker => s.update(ticker.deltaTime))
 
       onResize = () => app.renderer.resize(window.innerWidth, window.innerHeight)
       window.addEventListener('resize', onResize)
@@ -97,6 +98,7 @@ export default function BubbleShooterCanvas({ onGameOver }: Props) {
       destroyed = true
       room?.leave()
       if (onResize) window.removeEventListener('resize', onResize)
+      scene?.destroy()
       if (initDone) app.destroy(true)
     }
   }, [])

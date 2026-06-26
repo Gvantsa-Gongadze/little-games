@@ -15,6 +15,8 @@ import {
 
 type InFlight = { bubble: Bubble; vx: number; vy: number }
 
+const SPECIAL_TYPES: SpecialType[] = ['bomb', 'rainbow', 'colorBomb', 'stone', 'frozen', 'lightning']
+
 export class BubbleShooterScene implements Scene {
   view = new Container()
 
@@ -27,10 +29,10 @@ export class BubbleShooterScene implements Scene {
 
   readonly grid:     GridManager
   private launcher:    Launcher
-  private aimGuide   = new Container()   // holds pre-rendered dot sprites
-  private aimDots:   Sprite[]  = []
-  private dotTex:    Texture | null = null
-  private particleTex: Texture | null = null
+  private aimGuide    = new Container()   // holds pre-rendered dot sprites
+  private aimDots:    Sprite[] = []
+  private dotTex:     Texture
+  private particleTex: Texture
 
   private inFlight:      InFlight | null = null
   private currentBubble: Bubble
@@ -111,18 +113,15 @@ export class BubbleShooterScene implements Scene {
     this.nextBubble.view.x = this.launcherX + 65
     this.nextBubble.view.y = this.launcherY
 
-    // Playfield wall lines + danger line (visual guides)
     const walls = new Graphics()
     walls.moveTo(this.wallLeft,  GRID_TOP_PAD).lineTo(this.wallLeft,  H - 36).stroke({ color: 0x3388aa, alpha: 0.25, width: 1 })
     walls.moveTo(this.wallRight, GRID_TOP_PAD).lineTo(this.wallRight, H - 36).stroke({ color: 0x3388aa, alpha: 0.25, width: 1 })
     walls.moveTo(this.wallLeft,  this.dangerY).lineTo(this.wallRight, this.dangerY).stroke({ color: 0xff4444, alpha: 0.45, width: 1.5 })
 
-    // Bottom platform bar
     const bar = new Graphics()
     bar.rect(0, H - 36, W, 36).fill({ color: 0x0d1a22 })
     bar.moveTo(0, H - 36).lineTo(W, H - 36).stroke({ color: 0x3388aa, alpha: 0.35, width: 1 })
 
-    // "NEXT" label above the preview slot
     const nextLabel = new Text({
       text: T.bubble.next,
       style: { fill: 0x888888, fontSize: 8, fontFamily: HUD_FONT },
@@ -137,7 +136,6 @@ export class BubbleShooterScene implements Scene {
       nextLabel, this.nextBubble.view,
     )
 
-    // HUD — score panel on the right side of the top bar
     const hudLayer = new Container()
 
     const panelBg = new Graphics()
@@ -170,9 +168,8 @@ export class BubbleShooterScene implements Scene {
       walls, bar, this.launcherLayer, this.advanceBar, hudLayer,
     )
 
-    // Pointer + keyboard events
     this.boundMouseMove = (e) => this.handleAim(e.clientX, e.clientY)
-    this.boundClick     = (e) => this.handleFire(e.clientX, e.clientY)
+    this.boundClick     = (e) => this.handleFire(e.clientY)
     this.boundKeyDown   = (e) => { if (e.code === 'KeyR' && this.gameState !== 'playing') window.location.reload() }
     window.addEventListener('mousemove', this.boundMouseMove)
     window.addEventListener('click',     this.boundClick)
@@ -202,12 +199,10 @@ export class BubbleShooterScene implements Scene {
     this.aimDirty = true   // barrel + guide both redraw in update(), not here
   }
 
-  private handleFire(mx: number, my: number) {
+  private handleFire(my: number) {
     if (this.gameState !== 'playing') return
     if (this.inFlight) return    // one bubble in the air at a time
     if (my >= this.launcherY) return
-
-    const angle = this.toAimAngle(mx, my)
 
     // Hand the current bubble off to flightLayer
     this.launcherLayer.removeChild(this.currentBubble.view)
@@ -217,11 +212,10 @@ export class BubbleShooterScene implements Scene {
 
     this.inFlight = {
       bubble: this.currentBubble,
-      vx: Math.cos(angle) * BUBBLE_SPEED,
-      vy: Math.sin(angle) * BUBBLE_SPEED,
+      vx: Math.cos(this.aimAngle) * BUBBLE_SPEED,
+      vy: Math.sin(this.aimAngle) * BUBBLE_SPEED,
     }
 
-    // Advance queue: next → current, sample a new next
     this.currentBubble = this.nextBubble
     this.currentBubble.view.x = this.launcherX
     this.currentBubble.view.y = this.launcherY
@@ -230,7 +224,6 @@ export class BubbleShooterScene implements Scene {
     this.nextBubble.view.y = this.launcherY
     this.launcherLayer.addChild(this.nextBubble.view)
 
-    // Shot counter — trigger a board-pressure advance every ADVANCE_EVERY shots
     this.shotsUntilAdvance--
     if (this.shotsUntilAdvance <= 0) {
       this.shotsUntilAdvance = ADVANCE_EVERY
@@ -246,11 +239,10 @@ export class BubbleShooterScene implements Scene {
     let vx = Math.cos(this.aimAngle)
     const vy = Math.sin(this.aimAngle)
 
-    const DOT_STEP  = 16
-    const MAX_STEPS = 38
+    const DOT_STEP = 16
     let dotIdx = 0
 
-    for (let i = 0; i < MAX_STEPS; i++) {
+    for (let i = 0; i < this.aimDots.length; i++) {
       x += vx * DOT_STEP
       y += vy * DOT_STEP
 
@@ -291,21 +283,16 @@ export class BubbleShooterScene implements Scene {
     f.bubble.view.x += f.vx * delta
     f.bubble.view.y += f.vy * delta
 
-    // Left playfield wall
     if (f.bubble.view.x - BUBBLE_RADIUS <= this.wallLeft) {
       f.bubble.view.x = this.wallLeft + BUBBLE_RADIUS
       f.vx = Math.abs(f.vx)
-    }
-    // Right playfield wall
-    else if (f.bubble.view.x + BUBBLE_RADIUS >= this.wallRight) {
+    } else if (f.bubble.view.x + BUBBLE_RADIUS >= this.wallRight) {
       f.bubble.view.x = this.wallRight - BUBBLE_RADIUS
       f.vx = -Math.abs(f.vx)
     }
 
-    // Reached the hard top boundary
     let shouldLand = f.bubble.view.y - BUBBLE_RADIUS <= GRID_TOP_PAD
 
-    // Check proximity to any occupied grid cell
     if (!shouldLand) {
       const approx  = this.grid.pixelToCell(f.bubble.view.x, f.bubble.view.y)
       const toCheck = [approx, ...this.grid.getHexNeighbors(approx.col, approx.row)]
@@ -374,8 +361,7 @@ export class BubbleShooterScene implements Scene {
 
   private spawnBubble(): Bubble {
     if (Math.random() < SPECIAL_SPAWN_RATE) {
-      const types: SpecialType[] = ['bomb', 'rainbow', 'colorBomb', 'stone', 'frozen', 'lightning']
-      const type = types[Math.floor(Math.random() * types.length)]
+      const type = SPECIAL_TYPES[Math.floor(Math.random() * SPECIAL_TYPES.length)]
       return new Bubble(this.getNextColor(), type)
     }
     return new Bubble(this.getNextColor())
@@ -396,7 +382,6 @@ export class BubbleShooterScene implements Scene {
       case 'colorBomb': return this.handleColorBombEffect(snapCell.col, snapCell.row)
     }
 
-    // Normal / rainbow / frozen / stone flow
     const cluster = this.grid.findCluster(snapCell.col, snapCell.row)
     if (cluster.length >= 3) {
       // Pre-existing frozen bubbles in cluster get a first-hit unfreeze instead of a pop.
@@ -455,7 +440,6 @@ export class BubbleShooterScene implements Scene {
   }
 
   private handleColorBombEffect(col: number, row: number) {
-    // Determine target colour from the nearest non-special occupied neighbour
     const neighbor = this.grid.getHexNeighbors(col, row).find(n => {
       const b = this.grid.getCell(n.col, n.row)?.bubble
       return b && !b.special
@@ -543,7 +527,7 @@ export class BubbleShooterScene implements Scene {
         const radius   = 1.5 + Math.random() * 2
         const duration = 0.22 + Math.random() * 0.12
 
-        const p = new Sprite(this.particleTex!)
+        const p = new Sprite(this.particleTex)
         p.anchor.set(0.5)
         p.tint  = color
         p.scale.set(radius / 6)   // texture radius is 6 px
@@ -570,7 +554,7 @@ export class BubbleShooterScene implements Scene {
     window.removeEventListener('click',     this.boundClick)
     window.removeEventListener('keydown',   this.boundKeyDown)
     this.view.destroy({ children: true })
-    this.dotTex?.destroy(true)
-    this.particleTex?.destroy(true)
+    this.dotTex.destroy(true)
+    this.particleTex.destroy(true)
   }
 }
