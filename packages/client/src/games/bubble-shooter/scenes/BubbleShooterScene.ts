@@ -1,4 +1,4 @@
-import { Application, Container, Graphics, Text } from 'pixi.js'
+import { Application, Container, Graphics, Sprite, Text, Texture } from 'pixi.js'
 import { gsap } from 'gsap'
 import T from '@/data/strings.json'
 import type { Scene } from '@/engine/SceneManager'
@@ -26,8 +26,11 @@ export class BubbleShooterScene implements Scene {
   private launcherLayer = new Container()
 
   readonly grid:     GridManager
-  private launcher: Launcher
-  private aimGuide  = new Graphics()
+  private launcher:    Launcher
+  private aimGuide   = new Container()   // holds pre-rendered dot sprites
+  private aimDots:   Sprite[]  = []
+  private dotTex:    Texture | null = null
+  private particleTex: Texture | null = null
 
   private inFlight:      InFlight | null = null
   private currentBubble: Bubble
@@ -82,6 +85,22 @@ export class BubbleShooterScene implements Scene {
     )
     this.grid.populate(initialLayout)
     this.gridLayer.addChild(this.grid.container)
+
+    // Shared textures — rendered once so aim guide and pop particles
+    // never rebuild GPU geometry at runtime.
+    const dotGfx = new Graphics().circle(0, 0, 2.5).fill({ color: 0xffffff })
+    this.dotTex = app.renderer.generateTexture(dotGfx)
+    dotGfx.destroy()
+    for (let i = 0; i < 38; i++) {
+      const s = new Sprite(this.dotTex)
+      s.anchor.set(0.5)
+      s.visible = false
+      this.aimGuide.addChild(s)
+      this.aimDots.push(s)
+    }
+    const pGfx = new Graphics().circle(0, 0, 6).fill({ color: 0xffffff })
+    this.particleTex = app.renderer.generateTexture(pGfx)
+    pGfx.destroy()
 
     // Launcher + current and next bubbles
     this.launcher = new Launcher(this.launcherX, this.launcherY)
@@ -180,8 +199,7 @@ export class BubbleShooterScene implements Scene {
     if (this.gameState !== 'playing') return
     if (my >= this.launcherY) return
     this.aimAngle = this.toAimAngle(mx, my)
-    this.launcher.setAngle(this.aimAngle)
-    this.aimDirty = true   // guide redraws in update(), not here
+    this.aimDirty = true   // barrel + guide both redraw in update(), not here
   }
 
   private handleFire(mx: number, my: number) {
@@ -222,9 +240,6 @@ export class BubbleShooterScene implements Scene {
   }
 
   private drawAimGuide() {
-    this.aimGuide.clear()
-
-    // Start dots from just past the barrel tip
     const START = BARREL_LENGTH + BUBBLE_RADIUS
     let x  = this.launcherX + Math.cos(this.aimAngle) * START
     let y  = this.launcherY + Math.sin(this.aimAngle) * START
@@ -233,12 +248,12 @@ export class BubbleShooterScene implements Scene {
 
     const DOT_STEP  = 16
     const MAX_STEPS = 38
+    let dotIdx = 0
 
     for (let i = 0; i < MAX_STEPS; i++) {
       x += vx * DOT_STEP
       y += vy * DOT_STEP
 
-      // mirror wall bounces in the guide
       if (x - BUBBLE_RADIUS <= this.wallLeft) {
         x  = this.wallLeft + BUBBLE_RADIUS
         vx = -vx
@@ -249,14 +264,23 @@ export class BubbleShooterScene implements Scene {
 
       if (y <= GRID_TOP_PAD) break
 
-      const alpha = Math.max(0.04, 0.48 - i * 0.012)
-      this.aimGuide.circle(x, y, 2.5).fill({ color: 0xffffff, alpha })
+      const dot   = this.aimDots[dotIdx++]
+      dot.x       = x
+      dot.y       = y
+      dot.alpha   = Math.max(0.04, 0.48 - i * 0.012)
+      dot.visible = true
+    }
+
+    // Hide any dots beyond the current trajectory length
+    for (let i = dotIdx; i < this.aimDots.length; i++) {
+      this.aimDots[i].visible = false
     }
   }
 
   update(delta: number) {
-    // Redraw aim guide at most once per frame regardless of mousemove rate
+    // Redraw barrel + aim guide at most once per frame regardless of mousemove rate
     if (this.aimDirty) {
+      this.launcher.setAngle(this.aimAngle)
       this.drawAimGuide()
       this.aimDirty = false
     }
@@ -512,21 +536,22 @@ export class BubbleShooterScene implements Scene {
         onComplete: () => { this.popLayer.removeChild(ring); ring.destroy() },
       })
 
-      // 12 radial particles — varying size, speed, and duration
+      // 12 radial particles — Sprite + tint avoids per-particle geometry upload
       for (let i = 0; i < 12; i++) {
         const angle    = (i / 12) * Math.PI * 2 + (Math.random() - 0.5) * 0.5
         const speed    = 16 + Math.random() * 18
         const radius   = 1.5 + Math.random() * 2
         const duration = 0.22 + Math.random() * 0.12
 
-        const p = new Graphics()
-        p.circle(0, 0, radius).fill({ color })
+        const p = new Sprite(this.particleTex!)
+        p.anchor.set(0.5)
+        p.tint  = color
+        p.scale.set(radius / 6)   // texture radius is 6 px
         p.x = x
         p.y = y
         this.popLayer.addChild(p)
 
-        // shrink as they travel so they trail off into nothing
-        gsap.to(p.scale, { x: 0.15, y: 0.15, duration, delay, ease: 'power2.in' })
+        gsap.to(p.scale, { x: 0, y: 0, duration, delay, ease: 'power2.in' })
         gsap.to(p, {
           x: x + Math.cos(angle) * speed,
           y: y + Math.sin(angle) * speed,
@@ -545,5 +570,7 @@ export class BubbleShooterScene implements Scene {
     window.removeEventListener('click',     this.boundClick)
     window.removeEventListener('keydown',   this.boundKeyDown)
     this.view.destroy({ children: true })
+    this.dotTex?.destroy(true)
+    this.particleTex?.destroy(true)
   }
 }
