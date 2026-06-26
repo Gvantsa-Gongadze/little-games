@@ -70,6 +70,8 @@ document.fonts.load('10px "Press Start 2P"').then(() => {
 ```
 The font is also preloaded in `index.html` with `<link rel="preload" as="font">` and `display=block` to hold rendering until the font is ready.
 
+`<StrictMode>` is intentionally **not used** — the game relies on imperative canvas setup (Pixi `Application`, Colyseus room, GSAP timelines, event listeners) that StrictMode's double-invoke would duplicate, causing two server rooms and two Supabase auth calls on every page load.
+
 ### Pages
 
 **`pages/Home.tsx`**
@@ -251,7 +253,7 @@ SPECIAL_COLOR_HEX = { bomb: 0x2c2c2c, rainbow: 0xeeeeee, colorBomb: 0xf4d03f,
 - Accepts `onGameOver?: (score, state) => void` prop (ref-stable via `onGameOverRef`).
 - On mount: joins `bubble_shooter_room` via `joinBubbleShooterRoom()`, registers `room.onMessage('colors', batch => colorQueue.push(...batch))`, requests 80 initial colors (`INITIAL_REQUEST`), and awaits the first response **in parallel** with `app.init()` via `Promise.all` to minimise startup time.
 - Maintains a plain local `BubbleColor[]` queue (not Colyseus state — `ArraySchema` requires client-side schema registration to decode). Colors are consumed via `colorQueue.shift()`.
-- `getNextColor()` closure: shifts one color, sends `'request_colors'` to the server whenever the queue drops below `REFILL_AT = 8`, keeping ~20 colors buffered ahead.
+- `getNextColor()` closure: shifts one color, sends `'request_colors'` to the server whenever the queue drops below `REFILL_AT = 8` **and no refill is already in flight** (`refillPending` flag). `refillPending` is reset when the `'colors'` response arrives, preventing duplicate requests during burst calls (e.g. `addTopRow` calling `getNextColor` 11 times in a row).
 - Passes `getNextColor` as the second constructor argument to `BubbleShooterScene`.
 - Calls `room.leave()` in the cleanup function.
 - Renders `<BubbleLeaderboardOverlay>` over the canvas when `gameOver !== null`; passes `() => window.location.reload()` as `onRestart`.
@@ -271,6 +273,7 @@ SPECIAL_COLOR_HEX = { bomb: 0x2c2c2c, rainbow: 0xeeeeee, colorBomb: 0xf4d03f,
 | `gridLayer` | Static grid bubbles (via `grid.container`) |
 | `flightLayer` | In-flight bubble while travelling |
 | `dropLayer` | Floating bubbles mid-fall animation |
+| `popLayer` | Particle explosion animations (ring + sparks on pop) |
 | `walls` + `bar` | Playfield wall lines + bottom platform (static Graphics) |
 | `launcherLayer` | Aim guide + launcher visual + current bubble + "NEXT" label + next bubble preview |
 | `advanceBar` | Board-pressure progress bar — rendered above everything except HUD |
@@ -305,8 +308,9 @@ Key behaviours:
   - **bomb** → `handleBombEffect`: removes all non-stone bubbles within 2 hex rings (15 pts/bubble) then checks floating/win/lose.
   - **lightning** → `handleLightningEffect`: removes all non-stone bubbles in the landing row (15 pts/bubble) then checks floating/win/lose.
   - **colorBomb** → `handleColorBombEffect`: removes the bomb itself, finds nearest non-special neighbor's color, removes every non-stone bubble of that color from the entire board (15 pts/bubble) then checks floating/win/lose.
-  - **normal / rainbow / frozen / stone** → `findCluster()`. If cluster ≥ 3: pre-existing frozen bubbles in the cluster (not the fired bubble) are "thawed" (swapped for a normal `Bubble(color)`) instead of popped; remaining non-frozen cells are popped (10 pts/bubble) if ≥ 3 remain; then `findFloating()` + `animateDrop()`. Discards bubble if no empty snap cell found. After every path checks win (`grid.isEmpty()`) and lose (`grid.hasBubbleBelowY(dangerY)`).
+  - **normal / rainbow / frozen / stone** → `findCluster()`. If cluster ≥ 3: pre-existing frozen bubbles in the cluster (not the fired bubble) are "thawed" (swapped for a normal `Bubble(color)`) instead of popped; remaining non-frozen cells are popped (10 pts/bubble) if ≥ 3 remain via `animatePop()`; then `findFloating()` + `animateDrop()`. Discards bubble if no empty snap cell found. After every path checks win (`grid.isEmpty()`) and lose (`grid.hasBubbleBelowY(dangerY)`).
 - **Win/lose** (`showResult(state)`): sets `gameState = state`, then calls `this.onGameOver?.(this.score, state)` — the scene itself does nothing else. The React canvas component (`BubbleShooterCanvas`) receives the callback, submits the score via `BubbleShooter.tsx`, and renders `<BubbleLeaderboardOverlay>` as a React overlay on top of the Pixi canvas.
+- **`animatePop(cells)`**: for each popped cell calls `grid.extractBubble()` then immediately destroys the view (particles replace it). Spawns in `popLayer`: (a) an expanding ring stroke (`BUBBLE_RADIUS × 0.75`) that scales to 1.8× and fades in 0.2 s; (b) 12 radial particle sparks coloured to match the bubble's visual colour (`COLOR_HEX` for normal, `SPECIAL_COLOR_HEX` for specials) — each travels 16–34 px outward with `power2.out`, shrinks to 0.15× with `power2.in`, and fades over 0.22–0.34 s. Small per-bubble stagger (0–40 ms) so cluster pops cascade visually. All Graphics destroyed in `onComplete`.
 - **`animateDrop(cells)`**: for each floating cell calls `grid.extractBubble()` (keeps view alive), moves view into `dropLayer`, then runs a GSAP tween — falls 520 px with `power2.in` easing, fades to alpha 0, slight random horizontal drift (±20 px) and stagger delay (0–80 ms) per bubble so cascades look natural. `onComplete` removes and destroys the view.
 - **Scoring** (`addScore(points)`): adds to `this.score`, updates `scoreText.text`, fires a GSAP scale-bounce (`1.35 → 1.0`, 220 ms, `back.out`) so the number visually pops. Called twice per pop event — `cluster.length × 10` pts for the matched cluster, then `floating.length × 20` pts for any disconnected bubbles that drop.
 - **HUD panel**: right-anchored `Text` objects (`anchor.set(1, 0)`) at `x = W - 14` so the score grows leftward as digits increase. "SCORE" label at 9 px (`#6699aa`), value at 15 px (`#ff6eb4`, game accent pink). Dark near-black background rect (`W - 190` to `W`, full `GRID_TOP_PAD` height) with left + bottom border strokes for definition.
@@ -348,8 +352,8 @@ Key behaviours:
   - **rainbow** at start cell → inherits colour from first non-special occupied neighbour; acts as wildcard in BFS (any rainbow bubble in the chain counts as matching).
   - **frozen** bubbles with a matching colour are included in the cluster; the scene separates them for first-hit unfreeze logic.
 - **`findFloating()`** → BFS seeded from every occupied cell in row 0; returns all occupied cells NOT reachable from the top (disconnected after a pop).
-- **`removeBubble(col, row)`** → removes Pixi view, destroys it, nulls the cell. Used for instant removal (popped cluster).
-- **`extractBubble(col, row)`** → removes bubble from grid state and grid container but returns the `Bubble` object alive so the caller can animate it. Used by `animateDrop`.
+- **`removeBubble(col, row)`** → removes Pixi view, destroys it, nulls the cell. Used only for frozen-bubble thaw swap (not for popped clusters — those use `animatePop` via `extractBubble`).
+- **`extractBubble(col, row)`** → removes bubble from grid state and grid container but returns the `Bubble` object alive so the caller can animate it. Used by `animatePop` (pop explosion) and `animateDrop` (floating fall).
 - **`getBoardColors()`** → scans all occupied cells, returns a deduplicated `BubbleColor[]` of every color currently on the board. Falls back to an empty array (server handles the fallback to all 6 colors). Called by `BubbleShooterCanvas` when sending `'request_colors'` to the server so the server biases new bubbles toward colors already on the board.
 - **`getBombTargets(col, row, rings)`** → BFS out to `rings` hex steps; returns every occupied non-stone cell in range (including the starting cell itself). Used by `handleBombEffect`.
 - **`getCellsInRow(row)`** → returns coordinates of every occupied non-stone cell in the given grid row. Used by `handleLightningEffect`.
@@ -365,7 +369,7 @@ Key behaviours:
 
 **`lib/supabase.ts`** — `createClient(VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY)` singleton.
 
-**`hooks/useAuth.ts`** — `{ user: User|null, loading: boolean }`. Uses `getUser()` + `onAuthStateChange`.
+**`hooks/useAuth.ts`** — `{ user: User|null, loading: boolean }`. Uses `onAuthStateChange` only — `INITIAL_SESSION` fires immediately from local storage, so no `getUser()` network call is needed to seed initial state. `loading` is cleared in the `onAuthStateChange` handler.
 
 **`lib/scores.ts`**
 ```ts

@@ -1,73 +1,55 @@
-# React + TypeScript + Vite
+# little-games — client
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React 19 + TypeScript + Vite frontend for the Little Games platform.
 
-Currently, two official plugins are available:
+## Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+| | |
+|---|---|
+| Framework | React 19 |
+| Bundler | Vite 8 |
+| 2D engine | Pixi.js v8 |
+| 3D engine | Three.js r168 |
+| Animation | GSAP |
+| Auth & DB | Supabase JS |
+| Multiplayer | colyseus.js |
 
-## React Compiler
+## Dev
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+pnpm dev:client   # http://localhost:5173
+pnpm typecheck    # tsc -b
+pnpm lint         # eslint
+pnpm build:client # production build → dist/
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Environment variables
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+Create `packages/client/.env`:
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```env
+VITE_SERVER_URL=ws://localhost:2567
+VITE_SUPABASE_URL=https://<your-project>.supabase.co
+VITE_SUPABASE_ANON_KEY=<your-anon-key>
 ```
+
+## Project structure
+
+```
+src/
+├── main.tsx              # entry — waits for Press Start 2P font, then mounts
+├── App.tsx               # React Router routes
+├── pages/                # one file per route
+├── components/           # shared UI (BackButton, ErrorBoundary, GameCard, …)
+├── engine/               # SceneManager, Keyboard, ColyseusClient
+├── games/
+│   ├── asteroids/        # AsteroidsScene + entities + audio
+│   ├── bubble-shooter/   # BubbleShooterScene + GridManager + entities
+│   ├── arena-2d/         # PixiCanvas + MenuScene + GameScene
+│   └── cube-3d/          # ThreeCanvas + CubeScene
+├── hooks/                # useAuth
+├── lib/                  # supabase.ts, scores.ts
+└── data/                 # strings.json, games.ts
+```
+
+See the root [`CLAUDE.md`](../../CLAUDE.md) for a full file-by-file reference.

@@ -4,12 +4,30 @@ A multiplayer mini-game platform built as a pnpm monorepo.
 
 ## Games
 
-| Game | Route | Description |
-|------|-------|-------------|
-| Asteroids | `/asteroids` | Classic arcade shooter with planets, gravity, power-ups, and a live leaderboard |
-| Bubble Shooter | `/bubble-shooter` | Aim and fire coloured bubbles to pop matching clusters and clear the board |
-| 2D Arena | `/game` | Multiplayer 2D arena (Pixi.js) |
-| 3D Cube | `/game3d` | Interactive 3D scene (Three.js) |
+| Game | Route | Tag |
+|------|-------|-----|
+| Asteroids | `/asteroids` | CLASSIC |
+| Bubble Shooter | `/bubble-shooter` | ARCADE |
+| 2D Arena | `/game` | 2D |
+| 3D Cube | `/game3d` | 3D |
+
+### Asteroids
+Classic top-down shooter rebuilt in Pixi.js. Features planets with gravitational pull, asteroid bounce physics, UFO enemies, triple-shot and shield power-ups, hyperspace jump, and a retro Web Audio synthesiser. Scores submitted to Supabase on death with a top-10 leaderboard overlay.
+
+### Bubble Shooter
+Hex-grid bubble shooter with a Colyseus backend for server-driven color generation. Fire bubbles to match clusters of 3+ and clear the board before a new row slides in every 8 shots.
+
+- **6 special bubble types** — bomb (2-ring area blast), rainbow (wildcard match), colorBomb (wipes all bubbles of a color), stone (immune), frozen (2-hit unfreeze), lightning (clears an entire row)
+- **Server-driven colors** — `BubbleShooterRoom` generates colors biased toward what's already on the board, keeping games winnable
+- **Particle explosions** — popped bubbles burst into an expanding ring shockwave + 12 radial particle sparks in the bubble's color
+- **Board pressure** — a new row slides in from the top every 8 shots; a progress bar counts down
+- **Leaderboard** — scores saved to Supabase on win/lose; top-10 overlay with current player highlighted
+
+### 2D Arena
+Multiplayer top-down arena built with Pixi.js and Colyseus. Supports up to 4 players connected via WebSocket.
+
+### 3D Cube
+Rotating 3D cube scene built with Three.js and OrbitControls.
 
 ## Stack
 
