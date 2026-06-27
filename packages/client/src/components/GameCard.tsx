@@ -33,6 +33,8 @@ const card: React.CSSProperties = {
   background: '#111',
   overflow: 'hidden',
   transition: 'transform 0.15s, border-color 0.15s',
+  display: 'flex',
+  flexDirection: 'column',
 }
 
 const preview: React.CSSProperties = {
@@ -56,6 +58,9 @@ const tag: React.CSSProperties = {
 
 const body: React.CSSProperties = {
   padding: '14px 16px 16px',
+  display: 'flex',
+  flexDirection: 'column',
+  flex: 1,
 }
 
 const playBtn: React.CSSProperties = {
@@ -67,4 +72,5 @@ const playBtn: React.CSSProperties = {
   fontSize: 14,
   color: '#000',
   cursor: 'pointer',
+  marginTop: 'auto',
 }
