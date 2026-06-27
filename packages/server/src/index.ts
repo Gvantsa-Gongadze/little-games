@@ -16,6 +16,7 @@ app.use(cors({
 app.use(express.json())
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }))
+app.get('/.well-known/*', (_req, res) => res.setHeader('Content-Type', 'application/json').end('{}'))
 
 const httpServer = createServer(app)
 

@@ -18,6 +18,7 @@ export default function BubbleShooterCanvas({ onGameOver }: Props) {
   const mountRef      = useRef<HTMLDivElement>(null)
   const onGameOverRef = useRef(onGameOver)
   const [gameOver, setGameOver] = useState<{ score: number; state: 'won' | 'lost' } | null>(null)
+  const [initError, setInitError] = useState<string | null>(null)
 
   useEffect(() => {
     onGameOverRef.current = onGameOver
@@ -92,7 +93,9 @@ export default function BubbleShooterCanvas({ onGameOver }: Props) {
       window.addEventListener('resize', onResize)
     }
 
-    init()
+    init().catch(err => {
+      if (!destroyed) setInitError(String(err?.message ?? err))
+    })
 
     return () => {
       destroyed = true
@@ -102,6 +105,14 @@ export default function BubbleShooterCanvas({ onGameOver }: Props) {
       if (initDone) app.destroy(true)
     }
   }, [])
+
+  if (initError) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100vw', height: '100vh', color: '#ff4444', fontFamily: 'monospace', padding: 24, textAlign: 'center' }}>
+        Failed to connect to server: {initError}. Is the game server running?
+      </div>
+    )
+  }
 
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh' }}>
