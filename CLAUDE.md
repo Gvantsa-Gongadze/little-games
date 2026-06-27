@@ -113,6 +113,7 @@ The font is also preloaded in `index.html` with `<link rel="preload" as="font">`
 - Displays game tile: emoji, title, description, accent color, tag badge.
 - Play button → `navigate(game.route)`.
 - All styles inline (`React.CSSProperties` consts).
+- Card is a flex column; `body` grows with `flex: 1`; Play button has `marginTop: 'auto'` so it always sits at the bottom regardless of description length.
 
 **`components/LoadingSpinner.tsx`**
 - Fixed overlay, green (#00ff99) spinning border on `#0f0f0f` bg.
@@ -256,6 +257,8 @@ SPECIAL_COLOR_HEX = { bomb: 0x2c2c2c, rainbow: 0xeeeeee, colorBomb: 0xf4d03f,
 - `getNextColor()` closure: shifts one color, sends `'request_colors'` to the server whenever the queue drops below `REFILL_AT = 8` **and no refill is already in flight** (`refillPending` flag). `refillPending` is reset when the `'colors'` response arrives, preventing duplicate requests during burst calls (e.g. `addTopRow` calling `getNextColor` 11 times in a row).
 - Passes `getNextColor` as the second constructor argument to `BubbleShooterScene`.
 - Calls `room.leave()` in the cleanup function.
+- `scene` is declared in the outer `useEffect` scope (not inside `init()`) so the cleanup function can call `scene?.destroy()` on unmount.
+- `init()` errors are caught via `.catch()` and stored in `initError` state; if set, renders a full-screen in-page error message instead of the canvas ("Failed to connect to server: …").
 - Renders `<BubbleLeaderboardOverlay>` over the canvas when `gameOver !== null`; passes `() => window.location.reload()` as `onRestart`.
 - Constants: `INITIAL_REQUEST = 80` (board 53 cells + launchers + buffer), `QUEUE_TARGET = 20`, `REFILL_AT = 8`.
 
@@ -333,7 +336,7 @@ Key behaviours:
 
 **`entities/Launcher.ts`**
 - `Launcher(x, y)` — fixed position container. Draws two-ring base (outer filled, inner stroke accent).
-- `setAngle(angle)` — clears and redraws barrel as three lines: shadow offset, body (`#55aacc`, width 9), highlight stripe (width 3, `alpha 0.4`). Called every frame the mouse moves.
+- `setAngle(angle)` — clears and redraws barrel as three lines: shadow offset, body (`#55aacc`, width 9), highlight stripe (width 3, `alpha 0.4`). Called once per frame from `BubbleShooterScene.update()` inside the `aimDirty` gate — never called directly from `mousemove` to avoid rAF violations.
 
 **`managers/GridManager.ts`**
 - Owns the grid state as `GridCell[][] = { bubble: Bubble | null }`.
@@ -376,6 +379,7 @@ getLeaderboard(game, limit=10)               // selects score, user_id, username
 
 ### Vite Config (`vite.config.ts`)
 - Port 5173, alias `@` → `src/`.
+- `open: '/lobby'` — browser auto-opens at `/lobby` on `pnpm dev`.
 - Proxy `/api` → `http://localhost:2567`.
 - Custom middleware silences Chrome DevTools `.well-known` 404.
 
@@ -394,6 +398,7 @@ VITE_SUPABASE_ANON_KEY=<anon-key>
 - Express + HTTP + Colyseus `Server`.
 - CORS: `ALLOWED_ORIGINS` env var (comma-separated, default `http://localhost:5173`).
 - `GET /health` → `{ status: 'ok' }`.
+- `GET /.well-known/*` → `{}` (silences Chrome DevTools CSP probe).
 - Registers `game_room` → `GameRoom`.
 - Registers `bubble_shooter_room` → `BubbleShooterRoom`.
 
