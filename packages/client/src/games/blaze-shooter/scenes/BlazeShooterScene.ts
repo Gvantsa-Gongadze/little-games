@@ -39,6 +39,7 @@ export class BlazeShooterScene {
   private currentLevel = 0
   private score        = 0
   private done         = false
+  private spawning     = false
   private fireTimer    = 0
   private keys         = new Set<string>()
 
@@ -101,6 +102,8 @@ export class BlazeShooterScene {
 
   loadLevel(config: LevelConfig) {
     this.currentLevel = config.level
+    this.spawning     = true
+    this.done         = false
     this.clearEnemies()
     this.clearBullets()
 
@@ -108,6 +111,7 @@ export class BlazeShooterScene {
     this.onResize()
 
     this.showSplash(config.boss ? `BOSS  LEVEL  ${config.level}` : `LEVEL  ${config.level}`, () => {
+      this.spawning = false
       this.spawnEnemies(config)
     })
   }
@@ -128,7 +132,7 @@ export class BlazeShooterScene {
     this.moveEnemies(delta)
     this.checkCollisions()
 
-    if (this.enemies.length === 0 && !this.done) {
+    if (this.enemies.length === 0 && !this.spawning && !this.done) {
       this.done = true
       this.handleLevelComplete()
     }
@@ -210,7 +214,6 @@ export class BlazeShooterScene {
         spawned++
       }
     }
-    this.done = false
   }
 
   private buildEnemy(x: number, y: number, speed: number, hp: number, isBoss: boolean): Enemy {
