@@ -4,6 +4,7 @@ import express from 'express'
 import cors from 'cors'
 import { GameRoom }           from './rooms/GameRoom'
 import { BubbleShooterRoom } from './rooms/BubbleShooterRoom'
+import { BlazeShooterRoom }  from './rooms/BlazeShooterRoom'
 
 const app = express()
 
@@ -23,6 +24,7 @@ const httpServer = createServer(app)
 const gameServer = new Server({ server: httpServer })
 gameServer.define('game_room', GameRoom)
 gameServer.define('bubble_shooter_room', BubbleShooterRoom)
+gameServer.define('blaze_shooter_room', BlazeShooterRoom)
 
 const PORT = Number(process.env.PORT) || 2567
 gameServer.listen(PORT).then(() => {
