@@ -4,19 +4,10 @@ import { joinBlazeShooterRoom } from '@/engine/ColyseusClient'
 import type { Room } from 'colyseus.js'
 import { BlazeShooterScene } from './scenes/BlazeShooterScene'
 import type { LevelConfig }  from './constants'
-import BlazeLeaderboardOverlay from './BlazeLeaderboardOverlay'
 
-interface Props { onGameOver?: (score: number) => void }
-
-export default function BlazeShooterCanvas({ onGameOver }: Props) {
-  const mountRef      = useRef<HTMLDivElement>(null)
-  const onGameOverRef = useRef(onGameOver)
-  const [gameOver, setGameOver]   = useState<{ score: number } | null>(null)
+export default function BlazeShooterCanvas() {
+  const mountRef = useRef<HTMLDivElement>(null)
   const [initError, setInitError] = useState<string | null>(null)
-
-  useEffect(() => {
-    onGameOverRef.current = onGameOver
-  })
 
   useEffect(() => {
     const app = new Application()
@@ -24,16 +15,6 @@ export default function BlazeShooterCanvas({ onGameOver }: Props) {
     let onResize: (() => void) | null = null
     let room: Room | null = null
     let scene: BlazeShooterScene | null = null
-
-    function requestLevel(level: number): Promise<LevelConfig | null> {
-      return new Promise(resolve => {
-        const unsub = room!.onMessage('level_data', (data: LevelConfig | null) => {
-          unsub()
-          resolve(data)
-        })
-        room!.send('request_level', { level })
-      })
-    }
 
     async function init() {
       room = await joinBlazeShooterRoom()
@@ -43,17 +24,15 @@ export default function BlazeShooterCanvas({ onGameOver }: Props) {
 
       mountRef.current!.appendChild(app.canvas)
 
-      const firstLevel = await requestLevel(1)
-      if (!firstLevel) return
-
-      const s = new BlazeShooterScene(app, requestLevel, (score) => {
-        onGameOverRef.current?.(score)
-        setGameOver({ score })
+      const unsub = room.onMessage('level_data', (data: LevelConfig | null) => {
+        unsub()
+        if (data) scene?.loadLevel(data)
       })
+      room.send('request_level', { level: 1 })
+
+      const s = new BlazeShooterScene()
       scene = s
-      s.loadLevel(firstLevel)
       app.stage.addChild(s.view)
-      app.ticker.add(t => s.update(t.deltaTime))
 
       onResize = () => s.onResize()
       window.addEventListener('resize', onResize)
@@ -79,15 +58,5 @@ export default function BlazeShooterCanvas({ onGameOver }: Props) {
     </div>
   )
 
-  return (
-    <div style={{ position:'relative', width:'100vw', height:'100vh' }}>
-      <div ref={mountRef} style={{ width:'100%', height:'100%' }} />
-      {gameOver && (
-        <BlazeLeaderboardOverlay
-          score={gameOver.score}
-          onRestart={() => window.location.reload()}
-        />
-      )}
-    </div>
-  )
+  return <div ref={mountRef} style={{ width:'100vw', height:'100vh' }} />
 }

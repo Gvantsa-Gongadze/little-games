@@ -1,9 +1,8 @@
-import { Application, Container, Graphics, Text } from 'pixi.js'
+import { Container, Graphics, Text } from 'pixi.js'
 import { gsap } from 'gsap'
 import {
   HUD_FONT,
   BRICK_W, BRICK_H, BRICK_GAP, BRICK_COLS, BRICK_ROWS,
-  levelClearBonus,
   type LevelConfig,
 } from '../constants'
 
@@ -24,36 +23,17 @@ interface Brick {
 export class BlazeShooterScene {
   view = new Container()
 
-  private currentLevel = 0
-  private score        = 0
-  private done         = false
-  private spawning     = false
-
-  private gameLayer    = new Container()
-  private hudLayer     = new Container()
+  private gameLayer = new Container()
+  private hudLayer  = new Container()
 
   private bricks:  Brick[]  = []
   private brickBorder: Graphics | null = null
 
-  private scoreText: Text
-  private levelText: Text
+  private levelText:  Text
   private splashText: Text
 
-  private requestLevel: (n: number) => Promise<LevelConfig | null>
-  private onGameOver:   (score: number) => void
-
-  constructor(
-    _app: Application,
-    requestLevel: (n: number) => Promise<LevelConfig | null>,
-    onGameOver: (score: number) => void,
-  ) {
-    this.requestLevel = requestLevel
-    this.onGameOver   = onGameOver
+  constructor() {
     this.view.addChild(this.gameLayer, this.hudLayer)
-
-    // HUD
-    this.scoreText = new Text({ text: 'SCORE  0', style: { fontFamily: FONT, fontSize: 12, fill: '#ffffff' } })
-    this.scoreText.position.set(14, 14)
 
     this.levelText = new Text({ text: '', style: { fontFamily: FONT, fontSize: 12, fill: 0xff6600 } })
     this.levelText.anchor.set(1, 0)
@@ -62,7 +42,7 @@ export class BlazeShooterScene {
     this.splashText.anchor.set(0.5)
     this.splashText.alpha = 0
 
-    this.hudLayer.addChild(this.scoreText, this.levelText, this.splashText)
+    this.hudLayer.addChild(this.levelText, this.splashText)
 
     this.onResize()
   }
@@ -70,33 +50,18 @@ export class BlazeShooterScene {
   // ── public API ──────────────────────────────────────────────────────────────
 
   loadLevel(config: LevelConfig) {
-    this.currentLevel = config.level
-    this.spawning     = true
-    this.done         = false
-
     this.levelText.text = `LEVEL  ${config.level}`
     this.onResize()
 
     this.clearBricks()
     this.spawnBricks(config.level)
 
-    this.showSplash(`LEVEL  ${config.level}`, () => {
-      this.spawning = false
-    })
+    this.showSplash(`LEVEL  ${config.level}`, () => {})
   }
 
   onResize() {
     this.levelText.position.set(W() - 14, 14)
     this.splashText.position.set(W() / 2, H() / 2)
-  }
-
-  update(_delta: number) {
-    if (this.done) return
-
-    if (this.bricks.length === 0 && !this.spawning && !this.done) {
-      this.done = true
-      this.handleLevelComplete()
-    }
   }
 
   destroy() {
@@ -105,12 +70,6 @@ export class BlazeShooterScene {
   }
 
   // ── private ─────────────────────────────────────────────────────────────────
-
-  private addScore(pts: number) {
-    this.score += pts
-    this.scoreText.text = `SCORE  ${this.score}`
-    gsap.fromTo(this.scoreText, { pixi: { scaleX: 1.3, scaleY: 1.3 } }, { pixi: { scaleX: 1, scaleY: 1 }, duration: 0.2, ease: 'back.out' })
-  }
 
   private showSplash(msg: string, onDone: () => void) {
     this.splashText.text  = msg
@@ -205,13 +164,4 @@ export class BlazeShooterScene {
     }
   }
 
-  private async handleLevelComplete() {
-    this.addScore(levelClearBonus(this.currentLevel))
-    const next = await this.requestLevel(this.currentLevel + 1)
-    if (next) {
-      this.loadLevel(next)
-    } else {
-      this.onGameOver(this.score)
-    }
-  }
 }
