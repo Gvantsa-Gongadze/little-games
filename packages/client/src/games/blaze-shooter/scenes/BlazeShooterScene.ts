@@ -2,6 +2,7 @@ import { Application, Container, Graphics, Text } from 'pixi.js'
 import { gsap } from 'gsap'
 import {
   HUD_FONT, PLAYER_SPEED, BULLET_SPEED, FIRE_RATE, ACCENT,
+  BRICK_W, BRICK_H, BRICK_GAP, BRICK_COLS, BRICK_ROWS,
   levelClearBonus,
   type LevelConfig,
 } from '../constants'
@@ -31,6 +32,11 @@ interface Enemy {
   hpBar: Graphics
 }
 
+interface Brick {
+  x: number; y: number
+  view: Graphics
+}
+
 // ── scene ────────────────────────────────────────────────────────────────────
 
 export class BlazeShooterScene {
@@ -50,8 +56,10 @@ export class BlazeShooterScene {
   private player:  Graphics
   private playerX  = 0
   private playerY  = 0
-  private bullets: Bullet[]  = []
-  private enemies: Enemy[]   = []
+  private bullets: Bullet[]       = []
+  private enemies: Enemy[]        = []
+  private bricks:  Brick[]        = []
+  private brickBorder: Graphics | null = null
 
   private scoreText: Text
   private levelText: Text
@@ -109,6 +117,9 @@ export class BlazeShooterScene {
 
     this.levelText.text = `LEVEL  ${config.level}`
     this.onResize()
+
+    this.clearBricks()
+    this.spawnBricks(config.level)
 
     this.showSplash(config.boss ? `BOSS  LEVEL  ${config.level}` : `LEVEL  ${config.level}`, () => {
       this.spawning = false
@@ -259,27 +270,44 @@ export class BlazeShooterScene {
       const b = this.bullets[bi]
       if (b.owner !== 'player') continue
 
+      // enemy hits
+      let consumed = false
       for (let ei = this.enemies.length - 1; ei >= 0; ei--) {
         const e   = this.enemies[ei]
-        const hit = b.owner === 'player'
-          && Math.abs(b.x - e.x) < (e.isBoss ? 36 : 18)
-          && Math.abs(b.y - e.y) < (e.isBoss ? 36 : 18)
+        const hit = Math.abs(b.x - e.x) < (e.isBoss ? 36 : 18)
+                 && Math.abs(b.y - e.y) < (e.isBoss ? 36 : 18)
 
         if (hit) {
-          this.gameLayer.removeChild(b.view)
-          b.view.destroy()
+          this.gameLayer.removeChild(b.view); b.view.destroy()
           this.bullets.splice(bi, 1)
+          consumed = true
 
           e.hp--
           this.drawHpBar(e)
-
           if (e.hp <= 0) {
             this.addScore(e.isBoss ? 1000 : 100)
             this.spawnPop(e.x, e.y, e.isBoss)
-            this.gameLayer.removeChild(e.view)
-            e.view.destroy()
+            this.gameLayer.removeChild(e.view); e.view.destroy()
             this.enemies.splice(ei, 1)
           }
+          break
+        }
+      }
+      if (consumed) continue
+
+      // brick hits
+      for (let bri = this.bricks.length - 1; bri >= 0; bri--) {
+        const br  = this.bricks[bri]
+        const hit = b.x >= br.x && b.x <= br.x + BRICK_W
+                 && b.y >= br.y && b.y <= br.y + BRICK_H
+
+        if (hit) {
+          this.gameLayer.removeChild(b.view); b.view.destroy()
+          this.bullets.splice(bi, 1)
+          this.spawnPop(br.x + BRICK_W / 2, br.y + BRICK_H / 2, false)
+          this.gameLayer.removeChild(br.view); br.view.destroy()
+          this.bricks.splice(bri, 1)
+          this.addScore(50)
           break
         }
       }
@@ -324,6 +352,85 @@ export class BlazeShooterScene {
         })
       },
     })
+  }
+
+  private spawnBricks(level: number) {
+    const totalW  = BRICK_COLS * (BRICK_W + BRICK_GAP) - BRICK_GAP
+    const totalH  = BRICK_ROWS * (BRICK_H + BRICK_GAP) - BRICK_GAP
+    const originX = (W() - totalW) / 2
+    const originY = (H() - totalH) / 2
+
+    const BG   = 0xd4b08c
+    const pad  = 18
+    const road = 28
+    const cr   = 24
+
+    const ix = originX - pad,     iy = originY - pad
+    const iw = totalW + pad * 2,  ih = totalH + pad * 2
+    const ox = ix - road,         oy = iy - road
+    const ow = iw + road * 2,     oh = ih + road * 2
+    const ocr = cr + road
+
+    const border = new Graphics()
+    border.roundRect(ox + 6, oy + 9, ow, oh, ocr).fill({ color: 0x000000, alpha: 0.28 })
+    border.roundRect(ox - 4, oy - 4, ow + 8, oh + 8, ocr + 4).fill({ color: 0x5c2810 })
+    border.roundRect(ox, oy, ow, oh, ocr).fill({ color: 0xaf6b28 })
+    border.roundRect(ox + 4, oy + 4, ow - 8, (oh - 8) * 0.4, ocr - 2).fill({ color: 0xce8f48, alpha: 0.65 })
+    border.roundRect(ox + 4, oy + oh * 0.58, ow - 8, oh * 0.38, ocr - 2).fill({ color: 0x000000, alpha: 0.10 })
+    border.roundRect(ix - 5, iy - 5, iw + 10, ih + 10, cr + 3).fill({ color: 0x5c2810, alpha: 0.45 })
+    border.roundRect(ix, iy, iw, ih, cr).fill({ color: BG })
+
+    this.gameLayer.addChild(border)
+    this.brickBorder = border
+
+    // 8-pointed starburst: blue centre, pink/purple outer arms
+    const cx    = (BRICK_COLS - 1) / 2
+    const cy    = (BRICK_ROWS - 1) / 2
+    const halfW = (BRICK_COLS - 1) / 2
+    const halfH = (BRICK_ROWS - 1) / 2
+
+    const CENTER_COLORS = [0x40c8f4, 0x50d0ff, 0x3ab4e8]
+    const MID_COLORS    = [0x3498db, 0x6050d8, 0x8050cc]
+    const OUTER_COLORS  = [0xff69b4, 0xe040b0, 0xc838a8, 0x9b59b6]
+
+    void level  // colour zones are distance-based; level reserved for future variation
+
+    for (let row = 0; row < BRICK_ROWS; row++) {
+      for (let col = 0; col < BRICK_COLS; col++) {
+        const ndx  = (col - cx) / halfW
+        const ndy  = (row - cy) / halfH
+        const dist = Math.sqrt(ndx * ndx + ndy * ndy)
+        if (dist > 1.02) continue
+
+        const angle      = Math.atan2(ndy, ndx)
+        const starFactor = Math.max(Math.abs(Math.cos(2 * angle)), Math.abs(Math.sin(2 * angle)))
+        const threshold  = 0.38 + 0.64 * starFactor
+        if (dist > threshold) continue
+
+        const norm    = dist / Math.max(threshold, 0.001)
+        const palette = norm < 0.38 ? CENTER_COLORS : norm < 0.72 ? MID_COLORS : OUTER_COLORS
+        const color   = palette[Math.floor(Math.random() * palette.length)]
+
+        const x = originX + col * (BRICK_W + BRICK_GAP)
+        const y = originY + row * (BRICK_H + BRICK_GAP)
+        const g = new Graphics()
+        g.rect(0, 0, BRICK_W, BRICK_H).fill({ color })
+        g.rect(0, 0, BRICK_W, 3).fill({ color: 0xffffff, alpha: 0.30 })
+        g.position.set(x, y)
+        this.gameLayer.addChild(g)
+        this.bricks.push({ x, y, view: g })
+      }
+    }
+  }
+
+  private clearBricks() {
+    for (const br of this.bricks) { this.gameLayer.removeChild(br.view); br.view.destroy() }
+    this.bricks = []
+    if (this.brickBorder) {
+      this.gameLayer.removeChild(this.brickBorder)
+      this.brickBorder.destroy()
+      this.brickBorder = null
+    }
   }
 
   private clearEnemies() {
