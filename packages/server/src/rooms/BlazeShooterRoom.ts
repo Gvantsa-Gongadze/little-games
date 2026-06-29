@@ -1,6 +1,6 @@
 import { Room, Client } from 'colyseus'
 
-const PALETTE = [0xff3333, 0xff8800, 0xffcc00, 0x33cc66, 0x33aaff, 0xaa44ff, 0xff44aa]
+const PALETTE = [0xee3333, 0x3366ee, 0x9933cc, 0x223355, 0xcccccc, 0xffcc22, 0x22bb55]
 const COLS    = 7
 
 function generateLevel(level: number) {

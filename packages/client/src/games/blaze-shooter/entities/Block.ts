@@ -48,16 +48,11 @@ export class Block {
   private draw() {
     const pct = this.hp / this.maxHp
     const g   = this.bg
+    const rx  = BLOCK_H / 2    // pill / capsule shape
     g.clear()
 
-    // Drop shadow
-    g.roundRect(2, 3, BLOCK_W, BLOCK_H, 8).fill({ color: 0x000000, alpha: 0.28 })
     // Body — desaturates as HP drains
-    g.roundRect(0, 0, BLOCK_W, BLOCK_H, 8).fill({ color: this.color, alpha: 0.35 + 0.65 * pct })
-    // Top specular highlight
-    g.roundRect(5, 5, BLOCK_W - 10, BLOCK_H * 0.32, 4).fill({ color: 0xffffff, alpha: 0.22 * pct })
-    // Bottom shadow strip
-    g.roundRect(5, BLOCK_H * 0.7, BLOCK_W - 10, BLOCK_H * 0.22, 4).fill({ color: 0x000000, alpha: 0.18 })
+    g.roundRect(0, 0, BLOCK_W, BLOCK_H, rx).fill({ color: this.color, alpha: 0.42 + 0.58 * pct })
 
     this.label.text  = String(this.hp)
     this.label.alpha = this.hp > 0 ? 1 : 0

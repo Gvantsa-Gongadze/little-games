@@ -1,13 +1,11 @@
 import { Application, Container, Graphics, Text } from 'pixi.js'
 import { gsap } from 'gsap'
 import {
-  HUD_FONT, ACCENT, BLOCK_COLORS,
-  BLOCK_COLS, BLOCK_W, BLOCK_H, BLOCK_GAP,
-  GRID_W, GRID_TOP_PAD, LAUNCHER_PAD, BALL_RADIUS, BALL_SPEED,
+  HUD_FONT, ACCENT,
+  GRID_W, GRID_TOP_PAD, LAUNCHER_PAD,
+  WOOD_DARK, WOOD_MID, WOOD_LIGHT,
   type LevelConfig,
 } from '../constants'
-import { Block } from '../entities/Block'
-import { Ball  } from '../entities/Ball'
 
 const FONT = `${HUD_FONT}, monospace`
 const W    = () => window.innerWidth
@@ -16,14 +14,14 @@ const H    = () => window.innerHeight
 export class BlazeShooterScene {
   view = new Container()
 
-  private gameLayer = new Container()   // blocks
-  private ballLayer = new Container()   // in-flight balls (above blocks)
-  private aimLayer  = new Container()   // aim guide + launcher visual
-  private fxLayer   = new Container()   // death particles
-  private hudLayer  = new Container()   // score / level / splash
+  // Layer order (back → front)
+  private bgLayer  = new Container()   // wooden frame + picture panel
+  private aimLayer = new Container()   // aim guide
+  private hudLayer = new Container()   // score / level / splash
 
-  private blocks: Block[] = []
-  private balls:  Ball[]  = []
+  // Background sub-graphics
+  private frameG   = new Graphics()
+  private pictureG = new Graphics()
 
   // Layout
   private launcherX = 0
@@ -33,66 +31,50 @@ export class BlazeShooterScene {
 
   // Aim
   private aimVx = 0
-  private aimVy = -1   // straight up by default
+  private aimVy = -1
 
-  // Volley state
-  private inFlight         = false
-  private canFire          = false
-  private ballsLanded      = 0
-  private ballReturnCounter = 0
-  private ballsInVolley    = 3    // grows with totalBlocksCleared
-  private totalBlocksCleared = 0
-
-  // Progression
-  private currentLevel = 1
-  private volleyCount  = 0
-
-  // Score
-  private score = 0
-
-  // HUD
+  // HUD nodes
   private scoreText: Text
   private levelText: Text
   private splashText: Text
 
-  // Graphics redrawn every frame for the aim guide
+  // Aim guide — redrawn every frame
   private aimGraphics = new Graphics()
 
-  // Safety flag — prevent async callbacks touching destroyed scene
-  private destroyed = false
-
-  private onGameOver: (score: number) => void
-
   private onMouseMoveCb: (e: MouseEvent) => void
-  private onClickCb:     (e: MouseEvent) => void
 
-  constructor(_app: Application, onGameOver: (score: number) => void) {
-    this.onGameOver = onGameOver
-    this.view.addChild(
-      this.gameLayer,
-      this.ballLayer,
-      this.aimLayer,
-      this.fxLayer,
-      this.hudLayer,
-    )
+  constructor(_app: Application, _onGameOver: (score: number) => void) {
+    this.bgLayer.addChild(this.frameG, this.pictureG)
     this.aimLayer.addChild(this.aimGraphics)
 
-    this.scoreText = new Text({ text: 'SCORE  0', style: { fontFamily: FONT, fontSize: 11, fill: '#ffffff' } })
-    this.scoreText.position.set(14, 14)
+    this.view.addChild(
+      this.bgLayer,
+      this.aimLayer,
+      this.hudLayer,
+    )
 
-    this.levelText = new Text({ text: 'LEVEL  1', style: { fontFamily: FONT, fontSize: 11, fill: ACCENT } })
+    this.scoreText = new Text({
+      text: '0',
+      style: { fontFamily: FONT, fontSize: 13, fill: '#ffffff' },
+    })
+
+    this.levelText = new Text({
+      text: 'LV 1',
+      style: { fontFamily: FONT, fontSize: 11, fill: '#ffeecc' },
+    })
     this.levelText.anchor.set(1, 0)
 
-    this.splashText = new Text({ text: '', style: { fontFamily: FONT, fontSize: 26, fill: ACCENT } })
+    this.splashText = new Text({
+      text: '',
+      style: { fontFamily: FONT, fontSize: 26, fill: ACCENT },
+    })
     this.splashText.anchor.set(0.5)
     this.splashText.alpha = 0
 
     this.hudLayer.addChild(this.scoreText, this.levelText, this.splashText)
 
     this.onMouseMoveCb = (e: MouseEvent) => this.handleMouseMove(e)
-    this.onClickCb     = ()              => this.handleClick()
     window.addEventListener('mousemove', this.onMouseMoveCb)
-    window.addEventListener('click',     this.onClickCb)
 
     this.onResize()
   }
@@ -100,49 +82,104 @@ export class BlazeShooterScene {
   // ── public API ──────────────────────────────────────────────────────────────
 
   loadLevel(config: LevelConfig) {
-    this.currentLevel = config.level
-    this.volleyCount  = 0
-    this.canFire      = false
-
-    this.levelText.text = `LEVEL  ${config.level}`
+    this.levelText.text = `LV ${config.level}`
     this.onResize()
-    this.clearBlocks()
-    this.spawnBlocks(config.rows)
-
-    this.showSplash(`LEVEL  ${config.level}`, () => {
-      if (!this.destroyed) this.canFire = true
-    })
+    this.showSplash(`LEVEL  ${config.level}`, () => {})
   }
 
   onResize() {
     this.launcherX = W() / 2
     this.launcherY = H() - LAUNCHER_PAD
 
-    const originX    = (W() - GRID_W) / 2
-    this.wallLeft    = originX
-    this.wallRight   = originX + GRID_W
+    const originX  = (W() - GRID_W) / 2
+    this.wallLeft  = originX
+    this.wallRight = originX + GRID_W
 
-    this.levelText.position.set(W() - 14, 14)
+    this.scoreText.position.set(this.wallLeft + 2, 26)
+    this.levelText.position.set(this.wallRight - 2, 26)
     this.splashText.position.set(W() / 2, H() / 2)
+
+    this.drawFrame()
+    this.drawPicture()
   }
 
-  update(delta: number) {
-    const dt = Math.min(delta, 2.5)
-    if (this.inFlight) {
-      this.updateBalls(dt)
-      this.checkCollisions()
-    }
+  update(_delta: number) {
     this.drawAimGuide()
   }
 
   destroy() {
-    this.destroyed = true
     window.removeEventListener('mousemove', this.onMouseMoveCb)
-    window.removeEventListener('click',     this.onClickCb)
-    for (const b of this.blocks) gsap.killTweensOf(b.view)
-    for (const b of this.balls)  gsap.killTweensOf(b.view)
     gsap.killTweensOf(this.splashText)
     this.view.destroy({ children: true })
+  }
+
+  // ── wooden frame ─────────────────────────────────────────────────────────────
+
+  private drawFrame() {
+    const g  = this.frameG
+    const fx = this.wallLeft  - 16
+    const fw = GRID_W + 32
+    const fy = 12
+    const fh = this.launcherY + 36 - fy
+    const r  = 22
+    g.clear()
+
+    g.roundRect(fx + 5, fy + 7, fw, fh, r).fill({ color: 0x000000, alpha: 0.28 })
+    g.roundRect(fx, fy, fw, fh, r).fill({ color: WOOD_MID })
+
+    for (let i = 0; i < 12; i++) {
+      const gy = fy + 18 + i * (fh / 12)
+      g.rect(fx + 8, gy, fw - 16, 1.5)
+       .fill({ color: 0xffffff, alpha: 0.04 + (i % 2) * 0.04 })
+    }
+
+    g.roundRect(fx + 10, fy + 10, fw - 20, fh - 20, r - 5)
+      .stroke({ color: WOOD_DARK, width: 3, alpha: 0.7 })
+    g.roundRect(fx + 13, fy + 13, fw - 26, fh - 26, r - 8)
+      .stroke({ color: WOOD_LIGHT, width: 1, alpha: 0.4 })
+    g.roundRect(fx + 14, fy + 14, fw - 28, fh - 28, r - 8)
+      .fill({ color: 0xd4a870, alpha: 0.28 })
+  }
+
+  // ── 10×10 brick mosaic — centred in the play area ───────────────────────────
+
+  private drawPicture() {
+    const g    = this.pictureG
+    const COLS = 10
+    const ROWS = 10
+    const BS   = 18
+    const GAP  = 2
+    const STEP = BS + GAP
+    const TOT  = COLS * STEP - GAP
+
+    const cx = this.wallLeft + GRID_W / 2
+    const cy = (GRID_TOP_PAD + this.launcherY) / 2
+    const ox = Math.round(cx - TOT / 2)
+    const oy = Math.round(cy - TOT / 2)
+
+    const COLORS = [
+      0x3366ee,
+      0xff44aa,
+      0x22bb55,
+      0xffcc22,
+    ]
+
+    g.clear()
+
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const color = COLORS[(r + c) % 4]
+        const bx    = ox + c * STEP
+        const by    = oy + r * STEP
+
+        g.roundRect(bx + 1, by + 2, BS, BS, 3).fill({ color: 0x000000, alpha: 0.28 })
+        g.roundRect(bx, by, BS, BS, 3).fill({ color })
+        g.roundRect(bx + 2, by + 2, BS - 4, Math.round(BS * 0.36), 2)
+          .fill({ color: 0xffffff, alpha: 0.24 })
+        g.roundRect(bx + 2, by + Math.round(BS * 0.66), BS - 4, Math.round(BS * 0.2), 1)
+          .fill({ color: 0x000000, alpha: 0.14 })
+      }
+    }
   }
 
   // ── input ────────────────────────────────────────────────────────────────────
@@ -152,7 +189,6 @@ export class BlazeShooterScene {
     const dy = e.clientY - this.launcherY
     if (dy >= -20) return
 
-    // Clamp: at least 10° from horizontal so shots are never near-flat
     const angle   = Math.atan2(dy, dx)
     const minRad  = 0.175
     const clamped = Math.max(-Math.PI + minRad, Math.min(-minRad, angle))
@@ -160,235 +196,23 @@ export class BlazeShooterScene {
     this.aimVy = Math.sin(clamped)
   }
 
-  private handleClick() {
-    if (!this.canFire || this.inFlight) return
-    this.fireBalls(this.aimVx * BALL_SPEED, this.aimVy * BALL_SPEED)
-  }
-
-  // ── fire + physics ───────────────────────────────────────────────────────────
-
-  private fireBalls(vx: number, vy: number) {
-    this.inFlight          = true
-    this.canFire           = false
-    this.ballsLanded       = 0
-    this.ballReturnCounter = 0
-
-    for (let i = 0; i < this.ballsInVolley; i++) {
-      gsap.delayedCall(i * 0.08, () => {
-        if (this.destroyed) return
-        const ball = new Ball(this.launcherX, this.launcherY, vx, vy)
-        this.balls.push(ball)
-        this.ballLayer.addChild(ball.view)
-      })
-    }
-  }
-
-  private updateBalls(delta: number) {
-    const wl      = this.wallLeft  + BALL_RADIUS
-    const wr      = this.wallRight - BALL_RADIUS
-    const ceiling = GRID_TOP_PAD   - BALL_RADIUS
-
-    for (const ball of this.balls) {
-      if (!ball.active) continue
-
-      ball.hitCooldown = Math.max(0, ball.hitCooldown - 1)
-
-      let { x, y, vx, vy } = ball
-
-      x += vx * delta
-      y += vy * delta
-
-      // Wall bounces
-      if (x < wl) { x = wl + (wl - x); vx =  Math.abs(vx) }
-      if (x > wr) { x = wr - (x - wr); vx = -Math.abs(vx) }
-
-      // Ceiling bounce
-      if (y < ceiling) { y = ceiling + (ceiling - y); vy = Math.abs(vy) }
-
-      // Land at launcher level
-      if (y >= this.launcherY) {
-        ball.active = false
-        ball.vx = vx
-        ball.vy = vy
-        const retIdx = this.ballReturnCounter++
-        gsap.to(ball.view, {
-          x: this.launcherX,
-          y: this.launcherY,
-          duration: 0.18,
-          delay:    retIdx * 0.035,
-          ease: 'power2.in',
-          onComplete: () => {
-            if (this.destroyed) return
-            this.ballLayer.removeChild(ball.view)
-            ball.view.destroy()
-            this.ballsLanded++
-            if (this.ballsLanded >= this.ballsInVolley) {
-              this.ballsLanded       = 0
-              this.ballReturnCounter = 0
-              this.endVolley()
-            }
-          },
-        })
-        continue
-      }
-
-      ball.vx = vx
-      ball.vy = vy
-      ball.setPos(x, y)
-    }
-  }
-
-  // ── collision ────────────────────────────────────────────────────────────────
-
-  private checkCollisions() {
-    const hw = BLOCK_W / 2
-    const hh = BLOCK_H / 2
-
-    for (const ball of this.balls) {
-      if (!ball.active || ball.hitCooldown > 0) continue
-
-      for (let i = this.blocks.length - 1; i >= 0; i--) {
-        const block = this.blocks[i]
-        const bx = block.x + hw
-        const by = block.y + hh
-        const dx = ball.x  - bx
-        const dy = ball.y  - by
-
-        const overlapX = BALL_RADIUS + hw - Math.abs(dx)
-        const overlapY = BALL_RADIUS + hh - Math.abs(dy)
-        if (overlapX <= 0 || overlapY <= 0) continue
-
-        // Resolve on the axis with smaller penetration depth
-        if (overlapX < overlapY) {
-          ball.vx = dx > 0 ? Math.abs(ball.vx) : -Math.abs(ball.vx)
-        } else {
-          ball.vy = dy > 0 ? Math.abs(ball.vy) : -Math.abs(ball.vy)
-        }
-        ball.hitCooldown = 3
-
-        if (block.hit()) {
-          this.addScore(block.maxHp * 10)
-          this.spawnDeathParticles(block.x + hw, block.y + hh, block.color)
-          this.gameLayer.removeChild(block.view)
-          block.view.destroy()
-          this.blocks.splice(i, 1)
-
-          this.totalBlocksCleared++
-          if (this.totalBlocksCleared % 5 === 0 && this.ballsInVolley < 20) {
-            this.ballsInVolley++
-          }
-        }
-
-        break  // each ball hits at most one block per frame
-      }
-    }
-  }
-
-  // ── end of volley ────────────────────────────────────────────────────────────
-
-  private endVolley() {
-    this.balls     = []
-    this.inFlight  = false
-    this.volleyCount++
-
-    // Level up every 8 volleys
-    if (this.volleyCount % 8 === 0) {
-      this.currentLevel++
-      this.levelText.text = `LEVEL  ${this.currentLevel}`
-      this.showSplash(`LEVEL  ${this.currentLevel}`, () => {})
-    }
-
-    this.dropBlocks(() => {
-      if (this.destroyed) return
-
-      // Game over: any block at or below the danger line
-      if (this.blocks.some(b => b.y + BLOCK_H >= this.launcherY - 10)) {
-        this.showSplash('GAME OVER', () => {
-          if (!this.destroyed) this.onGameOver(this.score)
-        })
-        return
-      }
-
-      this.spawnTopRow()
-      this.canFire = true
-    })
-  }
-
-  private dropBlocks(onComplete: () => void) {
-    if (this.blocks.length === 0) { onComplete(); return }
-
-    const dy = BLOCK_H + BLOCK_GAP
-    let pending = this.blocks.length
-
-    for (const block of this.blocks) {
-      block.y += dy
-      gsap.to(block.view, {
-        y: block.y,
-        duration: 0.32,
-        ease: 'power2.inOut',
-        onComplete: () => {
-          if (this.destroyed) return
-          pending--
-          if (pending === 0) onComplete()
-        },
-      })
-    }
-  }
-
-  private spawnTopRow() {
-    const originX = (W() - GRID_W) / 2
-    const maxHp   = Math.max(1, Math.ceil(this.currentLevel * 1.5))
-
-    for (let c = 0; c < BLOCK_COLS; c++) {
-      const hp    = Math.max(1, Math.ceil(Math.random() * maxHp))
-      const color = BLOCK_COLORS[Math.floor(Math.random() * BLOCK_COLORS.length)]
-      const x     = originX + c * (BLOCK_W + BLOCK_GAP)
-      const block = new Block(x, GRID_TOP_PAD, hp, color)
-      // Slide in from above
-      block.view.y = GRID_TOP_PAD - BLOCK_H - BLOCK_GAP
-      gsap.to(block.view, { y: GRID_TOP_PAD, duration: 0.28, ease: 'back.out(1.2)' })
-      this.gameLayer.addChild(block.view)
-      this.blocks.push(block)
-    }
-  }
-
-  // ── visuals ──────────────────────────────────────────────────────────────────
+  // ── aim guide ────────────────────────────────────────────────────────────────
 
   private drawAimGuide() {
     const g  = this.aimGraphics
-    g.clear()
-
     const lx = this.launcherX
     const ly = this.launcherY
+    g.clear()
 
-    // Subtle danger line
-    g.rect(0, ly + 26, W(), 2).fill({ color: 0xff2222, alpha: 0.3 })
-
-    // Launcher base
-    g.circle(lx, ly, 22).fill({ color: 0x0d0d1a })
-    g.circle(lx, ly, 22).stroke({ color: ACCENT, width: 2.5, alpha: 0.85 })
-    g.circle(lx, ly, 12).fill({ color: 0x111128 })
-
-    // Nozzle barrel
-    const nx = lx + this.aimVx * 32
-    const ny = ly + this.aimVy * 32
-    g.moveTo(lx, ly).lineTo(nx, ny).stroke({ color: ACCENT, width: 6, cap: 'round' })
-    g.circle(nx, ny, 6).fill({ color: 0xff9944 })
-
-    // Ball count indicator (small dots above launcher)
-    const maxDots = Math.min(this.ballsInVolley, 20)
-    for (let i = 0; i < maxDots; i++) {
-      const dot_x = lx + (i - (maxDots - 1) / 2) * 9
-      g.circle(dot_x, ly - 34, 3).fill({ color: ACCENT, alpha: 0.8 })
-    }
-
-    // Aim guide dots (only when ready to fire)
-    if (!this.canFire) return
+    const nx = lx + this.aimVx * 28
+    const ny = ly + this.aimVy * 28
+    g.moveTo(lx, ly).lineTo(nx, ny)
+      .stroke({ color: 0xffffff, width: 5, cap: 'round', alpha: 0.75 })
 
     let ax = lx, ay = ly
     let avx = this.aimVx; const avy = this.aimVy
-    const wl = this.wallLeft  + BALL_RADIUS
-    const wr = this.wallRight - BALL_RADIUS
+    const wl = this.wallLeft  + 10
+    const wr = this.wallRight - 10
 
     for (let i = 0; i < 55; i++) {
       ax += avx * 16
@@ -398,65 +222,13 @@ export class BlazeShooterScene {
       if (ax > wr) { ax = wr; avx = -Math.abs(avx) }
       if (ay < GRID_TOP_PAD) break
 
-      const alpha = Math.max(0, 0.6 - i * 0.011)
-      const r     = Math.max(1.5, 3.5 - i * 0.045)
-      g.circle(ax, ay, r).fill({ color: ACCENT, alpha })
-    }
-  }
-
-  private spawnDeathParticles(x: number, y: number, color: number) {
-    const count = 10
-    for (let i = 0; i < count; i++) {
-      const p   = new Graphics()
-      const ang = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.6
-      const dst = 18 + Math.random() * 22
-      p.rect(-4, -4, 8, 8).fill({ color })
-      p.angle = Math.random() * 60
-      p.position.set(x, y)
-      this.fxLayer.addChild(p)
-      gsap.to(p, {
-        x:        x + Math.cos(ang) * dst,
-        y:        y + Math.sin(ang) * dst,
-        alpha:    0,
-        angle:    p.angle + 80,
-        duration: 0.28 + Math.random() * 0.18,
-        ease:     'power2.out',
-        onComplete: () => { this.fxLayer.removeChild(p); p.destroy() },
-      })
+      const alpha = Math.max(0, 0.55 - i * 0.01)
+      const r     = Math.max(1.5, 3 - i * 0.04)
+      g.circle(ax, ay, r).fill({ color: 0xffffff, alpha })
     }
   }
 
   // ── helpers ──────────────────────────────────────────────────────────────────
-
-  private spawnBlocks(rows: LevelConfig['rows']) {
-    const originX = (W() - GRID_W) / 2
-    for (let r = 0; r < rows.length; r++) {
-      for (let c = 0; c < BLOCK_COLS; c++) {
-        const cell = rows[r]?.[c]
-        if (!cell) continue
-        const x     = originX + c * (BLOCK_W + BLOCK_GAP)
-        const y     = GRID_TOP_PAD + r * (BLOCK_H + BLOCK_GAP)
-        const block = new Block(x, y, cell.hp, cell.color)
-        this.gameLayer.addChild(block.view)
-        this.blocks.push(block)
-      }
-    }
-  }
-
-  private clearBlocks() {
-    for (const b of this.blocks) {
-      this.gameLayer.removeChild(b.view)
-      b.view.destroy()
-    }
-    this.blocks = []
-  }
-
-  private addScore(pts: number) {
-    this.score += pts
-    this.scoreText.text = `SCORE  ${this.score}`
-    this.scoreText.scale.set(1.3)
-    gsap.to(this.scoreText.scale, { x: 1, y: 1, duration: 0.18, ease: 'back.out' })
-  }
 
   private showSplash(msg: string, onDone: () => void) {
     gsap.killTweensOf(this.splashText)

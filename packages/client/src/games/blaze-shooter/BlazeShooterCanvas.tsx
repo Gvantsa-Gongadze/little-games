@@ -35,7 +35,7 @@ export default function BlazeShooterCanvas({ onGameOver }: Props) {
 
     async function init() {
       room = await joinBlazeShooterRoom()
-      await app.init({ resizeTo: window, backgroundColor: 0x0d0d1a })
+      await app.init({ resizeTo: window, backgroundColor: 0xc8956b })
       if (destroyed) return
 
       mountRef.current!.appendChild(app.canvas)
