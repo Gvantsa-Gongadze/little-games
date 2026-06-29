@@ -45,5 +45,13 @@ export const GAMES: GameMeta[] = [
     accent: '#facc15',
     emoji: '🪨',
   },
-
+  {
+    id: 'blaze-shooter',
+    title: 'Blaze Shooter',
+    description: 'Aim, fire, bounce. Clear every block.',
+    route: '/blaze-shooter',
+    tag: 'ARCADE',
+    accent: '#ff6600',
+    emoji: '🔥',
+  },
 ]

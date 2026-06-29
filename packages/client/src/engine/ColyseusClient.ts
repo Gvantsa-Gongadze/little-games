@@ -17,4 +17,8 @@ export async function joinBubbleShooterRoom(): Promise<Room> {
   return getClient().joinOrCreate('bubble_shooter_room')
 }
 
+export async function joinBlazeShooterRoom(): Promise<Room> {
+  return getClient().joinOrCreate('blaze_shooter_room')
+}
+
 
