@@ -59,6 +59,7 @@ little-games/
 /game3d          → pages/Game3D.tsx           Three.js 3D cube
 /asteroids       → pages/Asteroids.tsx        Asteroids game
 /bubble-shooter  → pages/BubbleShooter.tsx    Bubble Shooter game
+/blaze-shooter   → pages/BlazeShooter.tsx     Blaze Shooter breakout game
 ```
 
 ### Entry Point (`main.tsx`)
@@ -95,6 +96,10 @@ The font is also preloaded in `index.html` with `<link rel="preload" as="font">`
 - `handleGameOver(score)` → reads `user_metadata.username`, calls `submitScore('bubble-shooter', score, userId, username)`.
 - Passes `handleGameOver` to `<BubbleShooterCanvas onGameOver={handleGameOver} />`.
 - `BubbleShooterCanvas` handles the overlay itself (React component, not Pixi).
+
+**`pages/BlazeShooter.tsx`**
+- Renders `<BlazeShooterCanvas />` + `<BackButton />`.
+- No score submission — Blaze Shooter does not write to Supabase yet.
 
 **`pages/Game3D.tsx`**
 - Renders `<ErrorBoundary><ThreeCanvas /></ErrorBoundary>`.
@@ -142,6 +147,7 @@ T.bubble.*       pressSpace, gameOver, win, score, next, scoreDefault
   { id: '2d-game',         title: '2D Arena',         route: '/game',            tag: '2D',      accent: '#00ff99', emoji: '🟩' },
   { id: '3d-cube',         title: '3D Cube',          route: '/game3d',          tag: '3D',      accent: '#a78bfa', emoji: '🟪' },
   { id: 'bubble-shooter',  title: 'Bubble Shooter',  route: '/bubble-shooter',  tag: 'ARCADE',  accent: '#ff6eb4', emoji: '🫧' },
+  { id: 'blaze-shooter',   title: 'Blaze Shooter',   route: '/blaze-shooter',   tag: 'ARCADE',  accent: '#ff6600', emoji: '🔥' },
 ]
 ```
 
@@ -162,6 +168,7 @@ interface Scene { view: Container; update(delta: number): void; destroy(): void 
 - Lazy singleton `Client`. `SERVER_URL` from `VITE_SERVER_URL` env (default `ws://localhost:2567`).
 - `joinGameRoom(name)` → `client.joinOrCreate('game_room', { name })`.
 - `joinBubbleShooterRoom()` → `client.joinOrCreate('bubble_shooter_room')`.
+- `joinBlazeShooterRoom()` → `client.joinOrCreate('blaze_shooter_room')`.
 
 ### Asteroids Game (`games/asteroids/`)
 
@@ -365,6 +372,83 @@ Key behaviours:
 - **`isEmpty()`** → `true` if no bubble remains in the grid (win condition).
 - **`addTopRow(getColor)`** → board-pressure advance. Shifts every existing row down by 1 in the `grid[][]` array (iterates end→start to avoid reference aliasing), repositions all shifted bubbles to their new `cellToPixel(c, r)` positions, then **flips `rowPhase = (rowPhase + 1) % 2`** so that all parity-dependent functions remain correct after the shift, then creates a fresh row 0 by calling `getColor()` for each cell and adding the new `Bubble` views to `container`. The scene offsets `container.y = -ROW_SPACING` before calling this so that visually the grid is unchanged; animating `container.y → 0` afterward creates the slide-in effect.
 
+### Blaze Shooter Game (`games/blaze-shooter/`)
+
+Breakout-style game: fire balls from a launcher at the bottom, bounce them off walls and blocks, clear every block before they reach the launcher line.
+
+**`constants.ts`** — single source of truth for all numeric tuning:
+```ts
+BLOCK_COLS   = 7
+BLOCK_W      = 60      // px
+BLOCK_H      = 40      // px
+BLOCK_GAP    = 6       // px between blocks
+GRID_W       = 456     // px (= BLOCK_COLS * (BLOCK_W + BLOCK_GAP) - BLOCK_GAP)
+GRID_TOP_PAD = 90      // px from top of screen to first block row
+LAUNCHER_PAD = 90      // px from bottom of screen to launcher centre
+BALL_RADIUS  = 8       // px
+BALL_SPEED   = 14      // px per tick at deltaTime=1
+HUD_FONT     = '"Press Start 2P"'
+ACCENT       = 0xff6600
+BLOCK_COLORS = [0xff3333, 0xff8800, 0xffcc00, 0x33cc66, 0x33aaff, 0xaa44ff, 0xff44aa]  // 7 colours
+LevelConfig  = { level: number; rows: { hp: number; color: number }[][] }
+```
+
+**`BlazeShooterCanvas.tsx`**
+- Props: `onGameOver?: (score: number) => void` (ref-stable via `onGameOverRef`).
+- On mount: joins `blaze_shooter_room` via `joinBlazeShooterRoom()`, then awaits `app.init()`.
+- `requestLevel(n)` — promise-based helper: sends `'request_level'` to server, resolves on the `'level_data'` response. Called once for level 1 before the scene is created; subsequent level-ups are handled in-scene.
+- Creates `BlazeShooterScene(app, onGameOver)`, calls `scene.loadLevel(firstLevel)`, wires `app.ticker`.
+- Shows `<BlazeLeaderboardOverlay score onRestart={() => window.location.reload()} />` when `gameOver` state is non-null.
+- `init()` errors stored in `initError` state → renders inline error message.
+
+**`BlazeLeaderboardOverlay.tsx`**
+- Props: `score`, `onRestart`.
+- Simple game-over screen — **no Supabase fetch** (no leaderboard table for this game yet).
+- Orange accent `#ff6600`. Shows GAME OVER, score, PLAY AGAIN button + "OR PRESS R" hint.
+- R key listener wired to `onRestart`.
+
+**`scenes/BlazeShooterScene.ts`** — main game loop. Rendering layers (back → front):
+
+| Layer | Contents |
+|---|---|
+| `gameLayer` | Blocks |
+| `ballLayer` | In-flight balls |
+| `aimLayer` | Aim guide dots + launcher visual (redrawn every frame) |
+| `fxLayer` | Death-particle explosions |
+| `hudLayer` | Score (top-left), level (top-right), splash text (centre) |
+
+Constructor: `BlazeShooterScene(app, onGameOver)`.
+
+Key fields:
+- `ballsInVolley` — starts at 3, increments by 1 every 5 total blocks cleared (cap 20). Ball count dots shown above launcher.
+- `inFlight` — `true` while any ball of the current volley is alive; blocks firing until all have landed.
+- `aimVx` / `aimVy` — normalised aim direction. Clamped ≥ 10° from horizontal so shots never go near-flat.
+- `wallLeft` / `wallRight` — left and right edges of the grid column range; balls bounce between these, not screen edges.
+
+Key behaviours:
+- **Fire** (`handleClick`): guards on `canFire && !inFlight`. Stagger-launches `ballsInVolley` balls with `gsap.delayedCall(i * 0.08, …)`.
+- **Physics** (`updateBalls`): per-ball each tick — wall bounce via `Math.abs` (prevents tunnelling), ceiling bounce, land at `launcherY`.
+- **Collision** (`checkCollisions`): AABB overlap test; resolves on the axis with smaller penetration depth; `hitCooldown = 3` frames after a hit to prevent the same ball registering multiple hits on one block in one pass.
+- **Block hit** (`block.hit()`): decrements HP, redraws body (desaturates as HP drains), returns `true` when HP reaches 0. Score = `block.maxHp × 10` on destroy.
+- **Death particles** (`spawnDeathParticles`): 10 coloured squares burst radially with GSAP, fade over 0.28–0.46 s.
+- **End of volley** (`endVolley`): all balls return to launcher via GSAP tweens (staggered); then `dropBlocks()` (GSAP `y` tweens, 0.32 s) → check lose (`block.y + BLOCK_H >= launcherY - 10`) → `spawnTopRow()` → `canFire = true`.
+- **Level up**: every 8 volleys, `currentLevel++` is handled entirely client-side — no server call. Max HP per new block = `ceil(level × 1.5)`.
+- **New top row** (`spawnTopRow`): random HP and colour per cell; slides in from above with `back.out(1.2)` GSAP tween.
+- **Aim guide**: 55 dot steps at 16 px intervals from launcher, simulating wall bounces; fades out; only drawn when `canFire`.
+- **Score bounce**: `scoreText.scale.set(1.3)` then `gsap.to(scoreText.scale, { x:1, y:1, … })` — animates the Pixi `scale` object directly (no PixiPlugin required).
+- `destroy()`: removes `mousemove` and `click` listeners, kills all GSAP tweens, destroys the container.
+
+**`entities/Block.ts`**
+- `Block(x, y, hp, color)` — `Container` with a `Graphics` body and a `Text` HP label.
+- Body has drop shadow, colour fill (alpha fades with HP %), specular highlight, bottom shadow strip.
+- `hit()` → decrements HP, redraws, returns `true` when destroyed.
+
+**`entities/Ball.ts`**
+- `Ball(x, y, vx, vy)` — single `Graphics`: outer orange glow ring, orange body, hot-core inner circle, specular highlight.
+- `setPos(x, y)` — updates fields and positions view.
+- `active: boolean` — set `false` when ball reaches `launcherY`; physics loop skips inactive balls.
+- `hitCooldown: number` — decremented each tick; ball cannot register a new collision while > 0.
+
 ### Auth & Data (`lib/`, `hooks/`)
 
 **`lib/supabase.ts`** — `createClient(VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY)` singleton.
@@ -401,6 +485,7 @@ VITE_SUPABASE_ANON_KEY=<anon-key>
 - `GET /.well-known/*` → `{}` (silences Chrome DevTools CSP probe).
 - Registers `game_room` → `GameRoom`.
 - Registers `bubble_shooter_room` → `BubbleShooterRoom`.
+- Registers `blaze_shooter_room` → `BlazeShooterRoom`.
 
 **`rooms/BubbleShooterRoom.ts`**
 - `maxClients = 1` — single-player room.
@@ -409,6 +494,14 @@ VITE_SUPABASE_ANON_KEY=<anon-key>
   - If `boardColors` is non-empty, samples from it (biases toward colors already on the board).
   - Otherwise samples from `ALL_COLORS` (`red | blue | green | yellow | purple | orange`).
   - Responds with `client.send('colors', string[])`.
+
+**`rooms/BlazeShooterRoom.ts`**
+- `maxClients = 1` — single-player room.
+- Stateless: no `RoomState`. Communication is purely message-based.
+- Handles `'request_level'` message `{ level: number }`:
+  - `generateLevel(level)`: `rowCount = min(2 + floor(level/2), 8)`, `maxHp = ceil(level × 1.5)`, every cell gets a random HP (1–maxHp) and colour from the 7-colour palette.
+  - Responds with `client.send('level_data', { level, rows })`.
+- Only called once per game (for level 1). Subsequent level-ups are generated client-side.
 
 **`rooms/GameRoom.ts`**
 - `maxClients = 4`.
@@ -457,7 +550,7 @@ Plain interfaces for type-sharing. **Not currently imported anywhere** — dead 
 create table scores (
   id         uuid        primary key default gen_random_uuid(),
   user_id    uuid        references auth.users not null,
-  game       text        not null,   -- 'asteroids' | 'bubble-shooter' | '2d-game' | '3d-cube'
+  game       text        not null,   -- 'asteroids' | 'bubble-shooter' | '2d-game' | '3d-cube' (blaze-shooter not yet submitted)
   score      integer     not null,
   username   text,                   -- from user_metadata at submit time; nullable
   created_at timestamptz default now()
@@ -487,6 +580,7 @@ Auth: Email provider enabled. Username stored in `auth.users.user_metadata.usern
 | Arena-2D game-over trigger | `GameScene` accepts `onGameOver` but never calls it |
 | Multiplayer sync | Client joins room but never sends `'move'` or reads server state |
 | Shared types usage | `IGameState`/`PlayerState` in `packages/shared` unused |
+| Blaze Shooter — leaderboard | No Supabase submit; `BlazeLeaderboardOverlay` shows score only (no top-10 fetch) |
 | Bubble Shooter — grid snap | ✓ `findSnapCell` + `place` wire up on landing |
 | Bubble Shooter — match & pop | ✓ `findCluster` BFS pops clusters of 3+ |
 | Bubble Shooter — floating drop | ✓ `findFloating` + `animateDrop`: disconnected bubbles fall with GSAP gravity animation |
