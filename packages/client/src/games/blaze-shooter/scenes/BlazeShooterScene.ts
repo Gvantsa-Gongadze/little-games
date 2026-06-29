@@ -386,7 +386,7 @@ export class BlazeShooterScene {
     if (!this.canFire) return
 
     let ax = lx, ay = ly
-    let avx = this.aimVx, avy = this.aimVy
+    let avx = this.aimVx; const avy = this.aimVy
     const wl = this.wallLeft  + BALL_RADIUS
     const wr = this.wallRight - BALL_RADIUS
 
