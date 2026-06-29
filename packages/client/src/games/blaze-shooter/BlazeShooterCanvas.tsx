@@ -35,7 +35,8 @@ export default function BlazeShooterCanvas({ onGameOver }: Props) {
 
     async function init() {
       room = await joinBlazeShooterRoom()
-      await app.init({ resizeTo: window, backgroundColor: 0xc8956b })
+      await app.init({ resizeTo: window, backgroundColor: 0x111111 })
+      ;(globalThis as Record<string, unknown>).__PIXI_APP__ = app
       if (destroyed) return
 
       mountRef.current!.appendChild(app.canvas)

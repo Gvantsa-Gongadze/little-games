@@ -16,7 +16,6 @@ export class BlazeShooterScene {
 
   // Layer order (back → front)
   private bgLayer  = new Container()   // wooden frame + picture panel
-  private aimLayer = new Container()   // aim guide
   private hudLayer = new Container()   // score / level / splash
 
   // Background sub-graphics
@@ -24,32 +23,26 @@ export class BlazeShooterScene {
   private pictureG = new Graphics()
 
   // Layout
-  private launcherX = 0
   private launcherY = 0
   private wallLeft  = 0
   private wallRight = 0
-
-  // Aim
-  private aimVx = 0
-  private aimVy = -1
 
   // HUD nodes
   private scoreText: Text
   private levelText: Text
   private splashText: Text
 
-  // Aim guide — redrawn every frame
-  private aimGraphics = new Graphics()
-
-  private onMouseMoveCb: (e: MouseEvent) => void
-
   constructor(_app: Application, _onGameOver: (score: number) => void) {
+    this.view.label     = 'BlazeShooterScene'
+    this.bgLayer.label  = 'bgLayer'
+    this.hudLayer.label = 'hudLayer'
+    this.frameG.label   = 'frameGraphics'
+    this.pictureG.label = 'roadGraphics'
+
     this.bgLayer.addChild(this.frameG, this.pictureG)
-    this.aimLayer.addChild(this.aimGraphics)
 
     this.view.addChild(
       this.bgLayer,
-      this.aimLayer,
       this.hudLayer,
     )
 
@@ -57,12 +50,14 @@ export class BlazeShooterScene {
       text: '0',
       style: { fontFamily: FONT, fontSize: 13, fill: '#ffffff' },
     })
+    this.scoreText.label = 'scoreText'
 
     this.levelText = new Text({
       text: 'LV 1',
       style: { fontFamily: FONT, fontSize: 11, fill: '#ffeecc' },
     })
     this.levelText.anchor.set(1, 0)
+    this.levelText.label = 'levelText'
 
     this.splashText = new Text({
       text: '',
@@ -70,11 +65,9 @@ export class BlazeShooterScene {
     })
     this.splashText.anchor.set(0.5)
     this.splashText.alpha = 0
+    this.splashText.label = 'splashText'
 
     this.hudLayer.addChild(this.scoreText, this.levelText, this.splashText)
-
-    this.onMouseMoveCb = (e: MouseEvent) => this.handleMouseMove(e)
-    window.addEventListener('mousemove', this.onMouseMoveCb)
 
     this.onResize()
   }
@@ -88,7 +81,6 @@ export class BlazeShooterScene {
   }
 
   onResize() {
-    this.launcherX = W() / 2
     this.launcherY = H() - LAUNCHER_PAD
 
     const originX  = (W() - GRID_W) / 2
@@ -103,12 +95,9 @@ export class BlazeShooterScene {
     this.drawPicture()
   }
 
-  update(_delta: number) {
-    this.drawAimGuide()
-  }
+  update(_delta: number) {}
 
   destroy() {
-    window.removeEventListener('mousemove', this.onMouseMoveCb)
     gsap.killTweensOf(this.splashText)
     this.view.destroy({ children: true })
   }
@@ -179,52 +168,6 @@ export class BlazeShooterScene {
         g.roundRect(bx + 2, by + Math.round(BS * 0.66), BS - 4, Math.round(BS * 0.2), 1)
           .fill({ color: 0x000000, alpha: 0.14 })
       }
-    }
-  }
-
-  // ── input ────────────────────────────────────────────────────────────────────
-
-  private handleMouseMove(e: MouseEvent) {
-    const dx = e.clientX - this.launcherX
-    const dy = e.clientY - this.launcherY
-    if (dy >= -20) return
-
-    const angle   = Math.atan2(dy, dx)
-    const minRad  = 0.175
-    const clamped = Math.max(-Math.PI + minRad, Math.min(-minRad, angle))
-    this.aimVx = Math.cos(clamped)
-    this.aimVy = Math.sin(clamped)
-  }
-
-  // ── aim guide ────────────────────────────────────────────────────────────────
-
-  private drawAimGuide() {
-    const g  = this.aimGraphics
-    const lx = this.launcherX
-    const ly = this.launcherY
-    g.clear()
-
-    const nx = lx + this.aimVx * 28
-    const ny = ly + this.aimVy * 28
-    g.moveTo(lx, ly).lineTo(nx, ny)
-      .stroke({ color: 0xffffff, width: 5, cap: 'round', alpha: 0.75 })
-
-    let ax = lx, ay = ly
-    let avx = this.aimVx; const avy = this.aimVy
-    const wl = this.wallLeft  + 10
-    const wr = this.wallRight - 10
-
-    for (let i = 0; i < 55; i++) {
-      ax += avx * 16
-      ay += avy * 16
-
-      if (ax < wl) { ax = wl; avx =  Math.abs(avx) }
-      if (ax > wr) { ax = wr; avx = -Math.abs(avx) }
-      if (ay < GRID_TOP_PAD) break
-
-      const alpha = Math.max(0, 0.55 - i * 0.01)
-      const r     = Math.max(1.5, 3 - i * 0.04)
-      g.circle(ax, ay, r).fill({ color: 0xffffff, alpha })
     }
   }
 
