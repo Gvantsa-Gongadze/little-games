@@ -11,6 +11,61 @@ const FONT = `${HUD_FONT}, monospace`
 const W    = () => window.innerWidth
 const H    = () => window.innerHeight
 
+function dashedPath(
+  g: Graphics,
+  pts: [number, number][],
+  dashLen: number,
+  gapLen: number,
+  color: number,
+  lineWidth: number,
+) {
+  let dashRemain = dashLen
+  let drawing    = true
+  for (let i = 1; i < pts.length; i++) {
+    const [x1, y1] = pts[i - 1]
+    const [x2, y2] = pts[i]
+    const segLen = Math.hypot(x2 - x1, y2 - y1)
+    if (segLen === 0) continue
+    const dx = (x2 - x1) / segLen
+    const dy = (y2 - y1) / segLen
+    let t = 0
+    while (t < segLen) {
+      const step = Math.min(dashRemain, segLen - t)
+      if (drawing) {
+        g.moveTo(x1 + dx * t,          y1 + dy * t)
+         .lineTo(x1 + dx * (t + step), y1 + dy * (t + step))
+         .stroke({ color, width: lineWidth, cap: 'round' })
+      }
+      t          += step
+      dashRemain -= step
+      if (dashRemain <= 0) {
+        drawing    = !drawing
+        dashRemain = drawing ? dashLen : gapLen
+      }
+    }
+  }
+}
+
+function roundRectPerimeter(
+  x: number, y: number, w: number, h: number, r: number, steps = 10,
+): [number, number][] {
+  const pts: [number, number][] = []
+  const corners: [number, number, number, number][] = [
+    [x + r,     y + r,     -Math.PI,      -Math.PI / 2],
+    [x + w - r, y + r,     -Math.PI / 2,  0           ],
+    [x + w - r, y + h - r,  0,             Math.PI / 2],
+    [x + r,     y + h - r,  Math.PI / 2,  Math.PI    ],
+  ]
+  for (const [cx, cy, a0, a1] of corners) {
+    for (let i = 0; i <= steps; i++) {
+      const a = a0 + (a1 - a0) * (i / steps)
+      pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r])
+    }
+  }
+  pts.push(pts[0])
+  return pts
+}
+
 export class BlazeShooterScene {
   view = new Container()
 
@@ -130,7 +185,7 @@ export class BlazeShooterScene {
       .fill({ color: 0xd4a870, alpha: 0.28 })
   }
 
-  // ── 10×10 brick mosaic — centred in the play area ───────────────────────────
+  // ── 10×10 brick mosaic with road circuit ────────────────────────────────────
 
   private drawPicture() {
     const g    = this.pictureG
@@ -139,22 +194,45 @@ export class BlazeShooterScene {
     const BS   = 18
     const GAP  = 2
     const STEP = BS + GAP
-    const TOT  = COLS * STEP - GAP
+    const TOT  = COLS * STEP - GAP   // 198 px
 
-    const cx = this.wallLeft + GRID_W / 2
-    const cy = (GRID_TOP_PAD + this.launcherY) / 2
-    const ox = Math.round(cx - TOT / 2)
-    const oy = Math.round(cy - TOT / 2)
-
-    const COLORS = [
-      0x3366ee,
-      0xff44aa,
-      0x22bb55,
-      0xffcc22,
-    ]
+    const midX = this.wallLeft + GRID_W / 2
+    const midY = (GRID_TOP_PAD + this.launcherY) / 2
+    const ox   = Math.round(midX - TOT / 2)
+    const oy   = Math.round(midY - TOT / 2)
 
     g.clear()
 
+    // ── Road circuit around the mosaic ───────────────────────────────────────
+    const pad   = 14     // px gap between mosaic edge and inner road edge
+    const roadW = 40     // px road width
+    const r_c   = 28     // corner radius for the road center path
+
+    const rcx = ox - pad - roadW / 2
+    const rcy = oy - pad - roadW / 2
+    const rcw = TOT + 2 * (pad + roadW / 2)
+    const rch = TOT + 2 * (pad + roadW / 2)
+
+    // Dark asphalt — thick stroke centered on the road-center path
+    g.roundRect(rcx, rcy, rcw, rch, r_c)
+     .stroke({ color: 0x1e1e1e, width: roadW })
+
+    // White outer edge line
+    const r_out = r_c + roadW / 2
+    g.roundRect(rcx - roadW / 2, rcy - roadW / 2, rcw + roadW, rch + roadW, r_out)
+     .stroke({ color: 0xffffff, width: 2.5, join: 'round', cap: 'round' })
+
+    // White inner edge line
+    const r_in = Math.max(4, r_c - roadW / 2)
+    g.roundRect(rcx + roadW / 2, rcy + roadW / 2, rcw - roadW, rch - roadW, r_in)
+     .stroke({ color: 0xffffff, width: 2.5, join: 'round', cap: 'round' })
+
+    // White dashed center line
+    const ctrPts = roundRectPerimeter(rcx, rcy, rcw, rch, r_c)
+    dashedPath(g, ctrPts, 14, 8, 0xffffff, 2)
+
+    // ── Brick mosaic (drawn on top so it sits inside the road ring) ──────────
+    const COLORS = [0x3366ee, 0xff44aa, 0x22bb55, 0xffcc22]
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
         const color = COLORS[(r + c) % 4]
