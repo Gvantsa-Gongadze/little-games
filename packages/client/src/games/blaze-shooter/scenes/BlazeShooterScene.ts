@@ -2,7 +2,7 @@ import { Application, Container, Graphics, Text } from 'pixi.js'
 import { gsap } from 'gsap'
 import {
   HUD_FONT, ACCENT,
-  GRID_W, GRID_TOP_PAD, LAUNCHER_PAD,
+  GRID_W, LAUNCHER_PAD,
   WOOD_DARK, WOOD_MID, WOOD_LIGHT,
   type LevelConfig,
 } from '../constants'
@@ -197,9 +197,10 @@ export class BlazeShooterScene {
     const TOT  = COLS * STEP - GAP   // 198 px
 
     const midX = this.wallLeft + GRID_W / 2
-    const midY = (GRID_TOP_PAD + this.launcherY) / 2
     const ox   = Math.round(midX - TOT / 2)
-    const oy   = Math.round(midY - TOT / 2)
+    // Top of mosaic = 30 % down from the frame's inner background edge
+    // (frame inner top = fy(12) + 14 = 26; inner height = launcherY + 24 - 28 = launcherY - 4)
+    const oy   = Math.round(26 + 0.20 * (this.launcherY - 4))
 
     g.clear()
 
@@ -255,7 +256,7 @@ export class BlazeShooterScene {
     const sqTotalW = 5 * SQ + 4 * SQ_GAP
     const sqStartX = Math.round(midX - sqTotalW / 2)
     const roadBotY = rcy + rch + roadW / 2   // outer bottom edge of the road ring
-    const sqY      = Math.round((roadBotY + this.launcherY) / 2 - SQ / 2)
+    const sqY      = Math.round(roadBotY + 50)
 
     for (let i = 0; i < 5; i++) {
       const sx = sqStartX + i * (SQ + SQ_GAP)
