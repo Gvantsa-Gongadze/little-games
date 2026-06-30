@@ -247,6 +247,21 @@ export class BlazeShooterScene {
           .fill({ color: 0x000000, alpha: 0.14 })
       }
     }
+
+    // ── 5 squares below the road ──────────────────────────────────────────────
+    // Five sharp-cornered squares, all warm-dark brown.
+    const SQ       = 57
+    const SQ_GAP   = 16
+    const sqTotalW = 5 * SQ + 4 * SQ_GAP
+    const sqStartX = Math.round(midX - sqTotalW / 2)
+    const roadBotY = rcy + rch + roadW / 2   // outer bottom edge of the road ring
+    const sqY      = Math.round((roadBotY + this.launcherY) / 2 - SQ / 2)
+
+    for (let i = 0; i < 5; i++) {
+      const sx = sqStartX + i * (SQ + SQ_GAP)
+      g.rect(sx + 2, sqY + 3, SQ, SQ).fill({ color: 0x000000, alpha: 0.3 })
+      g.rect(sx, sqY, SQ, SQ).fill({ color: 0x7a4418 })
+    }
   }
 
   // ── helpers ──────────────────────────────────────────────────────────────────
