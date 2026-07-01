@@ -374,80 +374,79 @@ Key behaviours:
 
 ### Blaze Shooter Game (`games/blaze-shooter/`)
 
-Breakout-style game: fire balls from a launcher at the bottom, bounce them off walls and blocks, clear every block before they reach the launcher line.
+**Current state: visual design phase — no active game mechanics yet.** The scene renders a warm-wood framed board with a coloured brick mosaic, a road circuit around it, and a row of launcher-placeholder squares below. Ball physics, collision, and scoring have been stripped out and will be re-added.
 
-**`constants.ts`** — single source of truth for all numeric tuning:
+**`constants.ts`** — tuning values (some legacy, kept for future use):
 ```ts
 BLOCK_COLS   = 7
-BLOCK_W      = 60      // px
-BLOCK_H      = 40      // px
-BLOCK_GAP    = 6       // px between blocks
-GRID_W       = 456     // px (= BLOCK_COLS * (BLOCK_W + BLOCK_GAP) - BLOCK_GAP)
-GRID_TOP_PAD = 90      // px from top of screen to first block row
-LAUNCHER_PAD = 90      // px from bottom of screen to launcher centre
-BALL_RADIUS  = 8       // px
-BALL_SPEED   = 14      // px per tick at deltaTime=1
+BLOCK_W      = 60      // px (legacy — not currently used by scene)
+BLOCK_H      = 40      // px (legacy)
+BLOCK_GAP    = 6       // px (legacy)
+GRID_W       = 456     // px — total play-area width; centres the board on screen
+GRID_TOP_PAD = 90      // px (legacy — scene now derives oy from frame inner edge)
+LAUNCHER_PAD = 80      // px from bottom of screen to launcherY
+BALL_RADIUS  = 10      // px (legacy)
+BALL_SPEED   = 14      // px/tick (legacy)
 HUD_FONT     = '"Press Start 2P"'
 ACCENT       = 0xff6600
-BLOCK_COLORS = [0xff3333, 0xff8800, 0xffcc00, 0x33cc66, 0x33aaff, 0xaa44ff, 0xff44aa]  // 7 colours
+WOOD_DARK    = 0x6b3a18
+WOOD_MID     = 0x9a6030
+WOOD_LIGHT   = 0xc8844a
+BLOCK_COLORS = [0xff3333, 0xff8800, 0xffcc00, 0x33cc66, 0x33aaff, 0xaa44ff, 0xff44aa]
 LevelConfig  = { level: number; rows: { hp: number; color: number }[][] }
 ```
 
 **`BlazeShooterCanvas.tsx`**
 - Props: `onGameOver?: (score: number) => void` (ref-stable via `onGameOverRef`).
-- On mount: joins `blaze_shooter_room` via `joinBlazeShooterRoom()`, then awaits `app.init()`.
-- `requestLevel(n)` — promise-based helper: sends `'request_level'` to server, resolves on the `'level_data'` response. Called once for level 1 before the scene is created; subsequent level-ups are handled in-scene.
+- On mount: joins `blaze_shooter_room`, awaits `app.init({ backgroundColor: 0x111111 })`.
+- Registers `globalThis.__PIXI_APP__ = app` for PixiJS DevTools.
+- `requestLevel(n)` — sends `'request_level'`, resolves on `'level_data'` response. Called once for level 1.
 - Creates `BlazeShooterScene(app, onGameOver)`, calls `scene.loadLevel(firstLevel)`, wires `app.ticker`.
-- Shows `<BlazeLeaderboardOverlay score onRestart={() => window.location.reload()} />` when `gameOver` state is non-null.
-- `init()` errors stored in `initError` state → renders inline error message.
+- Shows `<BlazeLeaderboardOverlay>` when `gameOver` state is non-null.
 
 **`BlazeLeaderboardOverlay.tsx`**
-- Props: `score`, `onRestart`.
-- Simple game-over screen — **no Supabase fetch** (no leaderboard table for this game yet).
-- Orange accent `#ff6600`. Shows GAME OVER, score, PLAY AGAIN button + "OR PRESS R" hint.
-- R key listener wired to `onRestart`.
+- Props: `score`, `onRestart`. No Supabase fetch — score display only.
+- Orange accent `#ff6600`. R key → `onRestart`.
 
-**`scenes/BlazeShooterScene.ts`** — main game loop. Rendering layers (back → front):
+**`scenes/BlazeShooterScene.ts`** — pure visual scene. Rendering layers (back → front):
 
 | Layer | Contents |
 |---|---|
-| `gameLayer` | Blocks |
-| `ballLayer` | In-flight balls |
-| `aimLayer` | Aim guide dots + launcher visual (redrawn every frame) |
-| `fxLayer` | Death-particle explosions |
+| `bgLayer` → `frameG` | Warm-wood rounded frame with grain stripes and inner lip |
+| `bgLayer` → `pictureG` | Road circuit + brick mosaic + launcher squares (all redrawn on resize) |
 | `hudLayer` | Score (top-left), level (top-right), splash text (centre) |
 
-Constructor: `BlazeShooterScene(app, onGameOver)`.
+Constructor: `BlazeShooterScene(app, onGameOver)`. All containers have `.label` set for PixiJS DevTools.
 
-Key fields:
-- `ballsInVolley` — starts at 3, increments by 1 every 5 total blocks cleared (cap 20). Ball count dots shown above launcher.
-- `inFlight` — `true` while any ball of the current volley is alive; blocks firing until all have landed.
-- `aimVx` / `aimVy` — normalised aim direction. Clamped ≥ 10° from horizontal so shots never go near-flat.
-- `wallLeft` / `wallRight` — left and right edges of the grid column range; balls bounce between these, not screen edges.
+**`drawFrame()`** — warm wood panel that fills the full play area:
+- Drop shadow → `WOOD_MID` fill → 12 horizontal grain stripes (alternating alpha) → dark inner border stroke (`WOOD_DARK`) → light highlight stroke (`WOOD_LIGHT`) → warm inner fill (`0xd4a870`, alpha 0.28).
+- Frame inner background: top = `fy + 14 = 26 px`, height = `launcherY − 4`.
 
-Key behaviours:
-- **Fire** (`handleClick`): guards on `canFire && !inFlight`. Stagger-launches `ballsInVolley` balls with `gsap.delayedCall(i * 0.08, …)`.
-- **Physics** (`updateBalls`): per-ball each tick — wall bounce via `Math.abs` (prevents tunnelling), ceiling bounce, land at `launcherY`.
-- **Collision** (`checkCollisions`): AABB overlap test; resolves on the axis with smaller penetration depth; `hitCooldown = 3` frames after a hit to prevent the same ball registering multiple hits on one block in one pass.
-- **Block hit** (`block.hit()`): decrements HP, redraws body (desaturates as HP drains), returns `true` when HP reaches 0. Score = `block.maxHp × 10` on destroy.
-- **Death particles** (`spawnDeathParticles`): 10 coloured squares burst radially with GSAP, fade over 0.28–0.46 s.
-- **End of volley** (`endVolley`): all balls return to launcher via GSAP tweens (staggered); then `dropBlocks()` (GSAP `y` tweens, 0.32 s) → check lose (`block.y + BLOCK_H >= launcherY - 10`) → `spawnTopRow()` → `canFire = true`.
-- **Level up**: every 8 volleys, `currentLevel++` is handled entirely client-side — no server call. Max HP per new block = `ceil(level × 1.5)`.
-- **New top row** (`spawnTopRow`): random HP and colour per cell; slides in from above with `back.out(1.2)` GSAP tween.
-- **Aim guide**: 55 dot steps at 16 px intervals from launcher, simulating wall bounces; fades out; only drawn when `canFire`.
-- **Score bounce**: `scoreText.scale.set(1.3)` then `gsap.to(scoreText.scale, { x:1, y:1, … })` — animates the Pixi `scale` object directly (no PixiPlugin required).
-- `destroy()`: removes `mousemove` and `click` listeners, kills all GSAP tweens, destroys the container.
+**`drawPicture()`** — three visual sections drawn into `pictureG`, redrawn on every resize:
 
-**`entities/Block.ts`**
-- `Block(x, y, hp, color)` — `Container` with a `Graphics` body and a `Text` HP label.
-- Body has drop shadow, colour fill (alpha fades with HP %), specular highlight, bottom shadow strip.
-- `hit()` → decrements HP, redraws, returns `true` when destroyed.
+1. **Road circuit** — rectangular track centred around the mosaic:
+   - `pad = 14 px` gap between mosaic edge and inner road boundary.
+   - `roadW = 40 px` road width drawn as a thick stroke on the road-center rounded-rect (`r_c = 28`), colour `0x1e1e1e` (dark asphalt).
+   - White 2.5 px solid stroke on outer boundary (`r_out = r_c + roadW/2 = 48`).
+   - White 2.5 px solid stroke on inner boundary (`r_in = max(4, r_c − roadW/2) = 8`).
+   - White dashed center line (14/8 px dash/gap) via `dashedPath()` helper walking `roundRectPerimeter()` points.
 
-**`entities/Ball.ts`**
-- `Ball(x, y, vx, vy)` — single `Graphics`: outer orange glow ring, orange body, hot-core inner circle, specular highlight.
-- `setPos(x, y)` — updates fields and positions view.
-- `active: boolean` — set `false` when ball reaches `launcherY`; physics loop skips inactive balls.
-- `hitCooldown: number` — decremented each tick; ball cannot register a new collision while > 0.
+2. **Brick mosaic** — 10 × 10 grid of 18 × 18 px rounded squares (radius 3, gap 2 px) centred inside the road:
+   - Top of mosaic: `oy = 26 + 0.20 × (launcherY − 4)` (20 % down from frame inner top).
+   - Diagonal colour pattern `COLORS[(r+c) % 4]` using `[0x3366ee, 0xff44aa, 0x22bb55, 0xffcc22]`.
+   - Each brick: drop shadow → colour fill → specular highlight → bottom shadow strip.
+
+3. **Launcher squares** — 5 × 57 px flat squares with sharp corners, colour `0x7a4418` (warm dark brown):
+   - Positioned 50 px below the road's outer bottom edge, centred horizontally.
+   - Each has a drop shadow; no glass/specular effect.
+
+Module-level helpers (not exported):
+- `dashedPath(g, pts, dashLen, gapLen, color, lineWidth)` — walks a polyline, alternating drawn/skipped segments.
+- `roundRectPerimeter(x, y, w, h, r, steps?)` — generates `[x, y][]` points around a rounded-rect perimeter including a closing point back to start.
+
+**`entities/Block.ts`** — still exists; `Block(x, y, hp, color)` draws a flat coloured body with HP label. Not currently used by the scene (mosaic is drawn directly in `pictureG`). Will be re-wired when game mechanics return.
+
+**Deleted:** `entities/Ball.ts` — removed; ball physics will be re-implemented.
 
 ### Auth & Data (`lib/`, `hooks/`)
 
@@ -580,6 +579,7 @@ Auth: Email provider enabled. Username stored in `auth.users.user_metadata.usern
 | Arena-2D game-over trigger | `GameScene` accepts `onGameOver` but never calls it |
 | Multiplayer sync | Client joins room but never sends `'move'` or reads server state |
 | Shared types usage | `IGameState`/`PlayerState` in `packages/shared` unused |
+| Blaze Shooter — game mechanics | Ball physics, collision, and scoring stripped out; scene is visual-design-only |
 | Blaze Shooter — leaderboard | No Supabase submit; `BlazeLeaderboardOverlay` shows score only (no top-10 fetch) |
 | Bubble Shooter — grid snap | ✓ `findSnapCell` + `place` wire up on landing |
 | Bubble Shooter — match & pop | ✓ `findCluster` BFS pops clusters of 3+ |
