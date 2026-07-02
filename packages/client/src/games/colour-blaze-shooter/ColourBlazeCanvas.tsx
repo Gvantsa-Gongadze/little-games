@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Application } from 'pixi.js'
+import { joinColourBlazeRoom } from '@/engine/ColyseusClient'
+import type { Room } from 'colyseus.js'
 import { ColourBlazeScene } from './scenes/ColourBlazeScene'
+import type { LevelConfig } from './constants'
 
 interface Props { onGameOver?: (score: number) => void }
 
@@ -14,20 +17,36 @@ export default function ColourBlazeCanvas({ onGameOver }: Props) {
   useEffect(() => {
     const app = new Application()
     let destroyed = false
+    let room:  Room | null = null
     let scene: ColourBlazeScene | null = null
     let onResize: (() => void) | null  = null
 
+    function requestLevel(level: number): Promise<LevelConfig | null> {
+      return new Promise(resolve => {
+        const unsub = room!.onMessage('level_data', (data: LevelConfig | null) => {
+          unsub()
+          resolve(data)
+        })
+        room!.send('request_level', { level })
+      })
+    }
+
     async function init() {
+      room = await joinColourBlazeRoom()
       await app.init({ resizeTo: window, backgroundColor: 0x111111 })
       ;(globalThis as Record<string, unknown>).__PIXI_APP__ = app
       if (destroyed) return
 
       mountRef.current!.appendChild(app.canvas)
 
+      const firstLevel = await requestLevel(1)
+      if (!firstLevel || destroyed) return
+
       const s = new ColourBlazeScene(app, (score) => {
         onGameOverRef.current?.(score)
       })
       scene = s
+      s.loadLevel(firstLevel)
       app.stage.addChild(s.view)
       app.ticker.add(t => s.update(t.deltaTime))
 
@@ -41,6 +60,7 @@ export default function ColourBlazeCanvas({ onGameOver }: Props) {
 
     return () => {
       destroyed = true
+      room?.leave()
       if (onResize) window.removeEventListener('resize', onResize)
       scene?.destroy()
       app.destroy(true)
@@ -52,7 +72,7 @@ export default function ColourBlazeCanvas({ onGameOver }: Props) {
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       width: '100vw', height: '100vh', color: '#ff4444', fontFamily: 'monospace',
     }}>
-      Failed to start: {initError}
+      Failed to connect: {initError}
     </div>
   )
 
