@@ -2,8 +2,10 @@ import { Application, Container, Text } from 'pixi.js'
 import { gsap } from 'gsap'
 import {
   HUD_FONT, ACCENT, GRID_W,
+  BLOCK_W, BLOCK_H, BLOCK_GAP, GRID_TOP_PAD,
   type LevelConfig,
 } from '../constants'
+import { Block } from '../entities/Block'
 
 const FONT = `${HUD_FONT}, monospace`
 const W    = () => window.innerWidth
@@ -13,7 +15,11 @@ export class ColourBlazeScene {
   view = new Container()
 
   // Layer order (back → front)
-  private hudLayer = new Container()   // score / level / splash
+  private gameLayer = new Container()  // blocks
+  private hudLayer  = new Container()  // score / level / splash
+
+  // Entities
+  private blocks: Block[] = []
 
   // Layout
   private wallLeft  = 0
@@ -25,10 +31,11 @@ export class ColourBlazeScene {
   private splashText: Text
 
   constructor(_app: Application, _onGameOver: (score: number) => void) {
-    this.view.label     = 'ColourBlazeScene'
-    this.hudLayer.label = 'hudLayer'
+    this.view.label      = 'ColourBlazeScene'
+    this.gameLayer.label = 'gameLayer'
+    this.hudLayer.label  = 'hudLayer'
 
-    this.view.addChild(this.hudLayer)
+    this.view.addChild(this.gameLayer, this.hudLayer)
 
     this.scoreText = new Text({
       text: '0',
@@ -61,6 +68,22 @@ export class ColourBlazeScene {
   loadLevel(config: LevelConfig) {
     this.levelText.text = `LV ${config.level}`
     this.onResize()
+
+    // Clear any blocks from the previous level
+    for (const block of this.blocks) block.view.destroy({ children: true })
+    this.blocks = []
+
+    // Build the block grid — centred horizontally, starting at GRID_TOP_PAD
+    config.rows.forEach((row, r) => {
+      row.forEach((cell, c) => {
+        const x = this.wallLeft + c * (BLOCK_W + BLOCK_GAP)
+        const y = GRID_TOP_PAD  + r * (BLOCK_H + BLOCK_GAP)
+        const block = new Block(x, y, cell.hp, cell.color)
+        this.blocks.push(block)
+        this.gameLayer.addChild(block.view)
+      })
+    })
+
     this.showSplash(`LEVEL  ${config.level}`)
   }
 
