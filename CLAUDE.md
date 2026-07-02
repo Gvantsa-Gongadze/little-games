@@ -457,7 +457,7 @@ Plain interfaces for type-sharing. **Not currently imported anywhere** — dead 
 create table scores (
   id         uuid        primary key default gen_random_uuid(),
   user_id    uuid        references auth.users not null,
-  game       text        not null,   -- 'asteroids' | 'bubble-shooter' | '2d-game' | '3d-cube' (blaze-shooter not yet submitted)
+  game       text        not null,   -- 'asteroids' | 'bubble-shooter' | '2d-game' | '3d-cube'
   score      integer     not null,
   username   text,                   -- from user_metadata at submit time; nullable
   created_at timestamptz default now()
