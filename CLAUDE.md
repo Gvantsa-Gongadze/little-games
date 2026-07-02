@@ -59,7 +59,6 @@ little-games/
 /game3d          → pages/Game3D.tsx           Three.js 3D cube
 /asteroids       → pages/Asteroids.tsx        Asteroids game
 /bubble-shooter  → pages/BubbleShooter.tsx    Bubble Shooter game
-/blaze-shooter   → pages/BlazeShooter.tsx     Blaze Shooter breakout game
 ```
 
 ### Entry Point (`main.tsx`)
@@ -96,10 +95,6 @@ The font is also preloaded in `index.html` with `<link rel="preload" as="font">`
 - `handleGameOver(score)` → reads `user_metadata.username`, calls `submitScore('bubble-shooter', score, userId, username)`.
 - Passes `handleGameOver` to `<BubbleShooterCanvas onGameOver={handleGameOver} />`.
 - `BubbleShooterCanvas` handles the overlay itself (React component, not Pixi).
-
-**`pages/BlazeShooter.tsx`**
-- Renders `<BlazeShooterCanvas />` + `<BackButton />`.
-- No score submission — Blaze Shooter does not write to Supabase yet.
 
 **`pages/Game3D.tsx`**
 - Renders `<ErrorBoundary><ThreeCanvas /></ErrorBoundary>`.
@@ -147,7 +142,6 @@ T.bubble.*       pressSpace, gameOver, win, score, next, scoreDefault
   { id: '2d-game',         title: '2D Arena',         route: '/game',            tag: '2D',      accent: '#00ff99', emoji: '🟩' },
   { id: '3d-cube',         title: '3D Cube',          route: '/game3d',          tag: '3D',      accent: '#a78bfa', emoji: '🟪' },
   { id: 'bubble-shooter',  title: 'Bubble Shooter',  route: '/bubble-shooter',  tag: 'ARCADE',  accent: '#ff6eb4', emoji: '🫧' },
-  { id: 'blaze-shooter',   title: 'Blaze Shooter',   route: '/blaze-shooter',   tag: 'ARCADE',  accent: '#ff6600', emoji: '🔥' },
 ]
 ```
 
@@ -168,7 +162,6 @@ interface Scene { view: Container; update(delta: number): void; destroy(): void 
 - Lazy singleton `Client`. `SERVER_URL` from `VITE_SERVER_URL` env (default `ws://localhost:2567`).
 - `joinGameRoom(name)` → `client.joinOrCreate('game_room', { name })`.
 - `joinBubbleShooterRoom()` → `client.joinOrCreate('bubble_shooter_room')`.
-- `joinBlazeShooterRoom()` → `client.joinOrCreate('blaze_shooter_room')`.
 
 ### Asteroids Game (`games/asteroids/`)
 
@@ -372,82 +365,6 @@ Key behaviours:
 - **`isEmpty()`** → `true` if no bubble remains in the grid (win condition).
 - **`addTopRow(getColor)`** → board-pressure advance. Shifts every existing row down by 1 in the `grid[][]` array (iterates end→start to avoid reference aliasing), repositions all shifted bubbles to their new `cellToPixel(c, r)` positions, then **flips `rowPhase = (rowPhase + 1) % 2`** so that all parity-dependent functions remain correct after the shift, then creates a fresh row 0 by calling `getColor()` for each cell and adding the new `Bubble` views to `container`. The scene offsets `container.y = -ROW_SPACING` before calling this so that visually the grid is unchanged; animating `container.y → 0` afterward creates the slide-in effect.
 
-### Blaze Shooter Game (`games/blaze-shooter/`)
-
-**Current state: visual design phase — no active game mechanics yet.** The scene renders a warm-wood framed board with a coloured brick mosaic, a road circuit around it, and a row of launcher-placeholder squares below. Ball physics, collision, and scoring have been stripped out and will be re-added.
-
-**`constants.ts`** — tuning values (some legacy, kept for future use):
-```ts
-BLOCK_COLS   = 7
-BLOCK_W      = 60      // px (legacy — not currently used by scene)
-BLOCK_H      = 40      // px (legacy)
-BLOCK_GAP    = 6       // px (legacy)
-GRID_W       = 456     // px — total play-area width; centres the board on screen
-GRID_TOP_PAD = 90      // px (legacy — scene now derives oy from frame inner edge)
-LAUNCHER_PAD = 80      // px from bottom of screen to launcherY
-BALL_RADIUS  = 10      // px (legacy)
-BALL_SPEED   = 14      // px/tick (legacy)
-HUD_FONT     = '"Press Start 2P"'
-ACCENT       = 0xff6600
-WOOD_DARK    = 0x6b3a18
-WOOD_MID     = 0x9a6030
-WOOD_LIGHT   = 0xc8844a
-BLOCK_COLORS = [0xff3333, 0xff8800, 0xffcc00, 0x33cc66, 0x33aaff, 0xaa44ff, 0xff44aa]
-LevelConfig  = { level: number; rows: { hp: number; color: number }[][] }
-```
-
-**`BlazeShooterCanvas.tsx`**
-- Props: `onGameOver?: (score: number) => void` (ref-stable via `onGameOverRef`).
-- On mount: joins `blaze_shooter_room`, awaits `app.init({ backgroundColor: 0x111111 })`.
-- Registers `globalThis.__PIXI_APP__ = app` for PixiJS DevTools.
-- `requestLevel(n)` — sends `'request_level'`, resolves on `'level_data'` response. Called once for level 1.
-- Creates `BlazeShooterScene(app, onGameOver)`, calls `scene.loadLevel(firstLevel)`, wires `app.ticker`.
-- Shows `<BlazeLeaderboardOverlay>` when `gameOver` state is non-null.
-
-**`BlazeLeaderboardOverlay.tsx`**
-- Props: `score`, `onRestart`. No Supabase fetch — score display only.
-- Orange accent `#ff6600`. R key → `onRestart`.
-
-**`scenes/BlazeShooterScene.ts`** — pure visual scene. Rendering layers (back → front):
-
-| Layer | Contents |
-|---|---|
-| `bgLayer` → `frameG` | Warm-wood rounded frame with grain stripes and inner lip |
-| `bgLayer` → `pictureG` | Road circuit + brick mosaic + launcher squares (all redrawn on resize) |
-| `hudLayer` | Score (top-left), level (top-right), splash text (centre) |
-
-Constructor: `BlazeShooterScene(app, onGameOver)`. All containers have `.label` set for PixiJS DevTools.
-
-**`drawFrame()`** — warm wood panel that fills the full play area:
-- Drop shadow → `WOOD_MID` fill → 12 horizontal grain stripes (alternating alpha) → dark inner border stroke (`WOOD_DARK`) → light highlight stroke (`WOOD_LIGHT`) → warm inner fill (`0xd4a870`, alpha 0.28).
-- Frame inner background: top = `fy + 14 = 26 px`, height = `launcherY − 4`.
-
-**`drawPicture()`** — three visual sections drawn into `pictureG`, redrawn on every resize:
-
-1. **Road circuit** — rectangular track centred around the mosaic:
-   - `pad = 14 px` gap between mosaic edge and inner road boundary.
-   - `roadW = 40 px` road width drawn as a thick stroke on the road-center rounded-rect (`r_c = 28`), colour `0x1e1e1e` (dark asphalt).
-   - White 2.5 px solid stroke on outer boundary (`r_out = r_c + roadW/2 = 48`).
-   - White 2.5 px solid stroke on inner boundary (`r_in = max(4, r_c − roadW/2) = 8`).
-   - White dashed center line (14/8 px dash/gap) via `dashedPath()` helper walking `roundRectPerimeter()` points.
-
-2. **Brick mosaic** — 10 × 10 grid of 18 × 18 px rounded squares (radius 3, gap 2 px) centred inside the road:
-   - Top of mosaic: `oy = 26 + 0.20 × (launcherY − 4)` (20 % down from frame inner top).
-   - Diagonal colour pattern `COLORS[(r+c) % 4]` using `[0x3366ee, 0xff44aa, 0x22bb55, 0xffcc22]`.
-   - Each brick: drop shadow → colour fill → specular highlight → bottom shadow strip.
-
-3. **Launcher squares** — 5 × 57 px flat squares with sharp corners, colour `0x7a4418` (warm dark brown):
-   - Positioned 50 px below the road's outer bottom edge, centred horizontally.
-   - Each has a drop shadow; no glass/specular effect.
-
-Module-level helpers (not exported):
-- `dashedPath(g, pts, dashLen, gapLen, color, lineWidth)` — walks a polyline, alternating drawn/skipped segments.
-- `roundRectPerimeter(x, y, w, h, r, steps?)` — generates `[x, y][]` points around a rounded-rect perimeter including a closing point back to start.
-
-**`entities/Block.ts`** — still exists; `Block(x, y, hp, color)` draws a flat coloured body with HP label. Not currently used by the scene (mosaic is drawn directly in `pictureG`). Will be re-wired when game mechanics return.
-
-**Deleted:** `entities/Ball.ts` — removed; ball physics will be re-implemented.
-
 ### Auth & Data (`lib/`, `hooks/`)
 
 **`lib/supabase.ts`** — `createClient(VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY)` singleton.
@@ -484,7 +401,6 @@ VITE_SUPABASE_ANON_KEY=<anon-key>
 - `GET /.well-known/*` → `{}` (silences Chrome DevTools CSP probe).
 - Registers `game_room` → `GameRoom`.
 - Registers `bubble_shooter_room` → `BubbleShooterRoom`.
-- Registers `blaze_shooter_room` → `BlazeShooterRoom`.
 
 **`rooms/BubbleShooterRoom.ts`**
 - `maxClients = 1` — single-player room.
@@ -493,14 +409,6 @@ VITE_SUPABASE_ANON_KEY=<anon-key>
   - If `boardColors` is non-empty, samples from it (biases toward colors already on the board).
   - Otherwise samples from `ALL_COLORS` (`red | blue | green | yellow | purple | orange`).
   - Responds with `client.send('colors', string[])`.
-
-**`rooms/BlazeShooterRoom.ts`**
-- `maxClients = 1` — single-player room.
-- Stateless: no `RoomState`. Communication is purely message-based.
-- Handles `'request_level'` message `{ level: number }`:
-  - `generateLevel(level)`: `rowCount = min(2 + floor(level/2), 8)`, `maxHp = ceil(level × 1.5)`, every cell gets a random HP (1–maxHp) and colour from the 7-colour palette.
-  - Responds with `client.send('level_data', { level, rows })`.
-- Only called once per game (for level 1). Subsequent level-ups are generated client-side.
 
 **`rooms/GameRoom.ts`**
 - `maxClients = 4`.
@@ -579,8 +487,6 @@ Auth: Email provider enabled. Username stored in `auth.users.user_metadata.usern
 | Arena-2D game-over trigger | `GameScene` accepts `onGameOver` but never calls it |
 | Multiplayer sync | Client joins room but never sends `'move'` or reads server state |
 | Shared types usage | `IGameState`/`PlayerState` in `packages/shared` unused |
-| Blaze Shooter — game mechanics | Ball physics, collision, and scoring stripped out; scene is visual-design-only |
-| Blaze Shooter — leaderboard | No Supabase submit; `BlazeLeaderboardOverlay` shows score only (no top-10 fetch) |
 | Bubble Shooter — grid snap | ✓ `findSnapCell` + `place` wire up on landing |
 | Bubble Shooter — match & pop | ✓ `findCluster` BFS pops clusters of 3+ |
 | Bubble Shooter — floating drop | ✓ `findFloating` + `animateDrop`: disconnected bubbles fall with GSAP gravity animation |
