@@ -1,11 +1,13 @@
-import { Application, Container, Text } from 'pixi.js'
+import { Application, Container, Graphics, Text } from 'pixi.js'
 import { gsap } from 'gsap'
 import {
   HUD_FONT, ACCENT, GRID_W,
   BLOCK_W, BLOCK_H, BLOCK_GAP, GRID_TOP_PAD,
+  LAUNCHER_PAD, BALL_RADIUS, BALL_SPEED, MIN_AIM_ANGLE,
   type LevelConfig,
 } from '../constants'
 import { Block } from '../entities/Block'
+import { Ball }  from '../entities/Ball'
 
 const FONT = `${HUD_FONT}, monospace`
 const W    = () => window.innerWidth
@@ -16,14 +18,38 @@ export class ColourBlazeScene {
 
   // Layer order (back → front)
   private gameLayer = new Container()  // blocks
+  private ballLayer = new Container()  // in-flight balls
+  private aimLayer  = new Container()  // aim guide + launcher visual
+  private fxLayer   = new Container()  // death-particle explosions
   private hudLayer  = new Container()  // score / level / splash
+
+  private aimG = new Graphics()
 
   // Entities
   private blocks: Block[] = []
+  private balls:  Ball[]  = []
+
+  // Game state
+  private score           = 0
+  private ballsInVolley   = 3
+  private inFlight        = false
+  private canFire         = true
+  private pendingLaunches = 0
+  private destroyed       = false
+
+  // Aim (normalised direction, defaults straight up)
+  private aimVx    = 0
+  private aimVy    = -1
+  private aimDirty = true
 
   // Layout
+  private launcherX = 0
+  private launcherY = 0
   private wallLeft  = 0
   private wallRight = 0
+
+  // GSAP handles
+  private launchCalls: gsap.core.Tween[] = []
 
   // HUD nodes
   private scoreText: Text
@@ -33,9 +59,21 @@ export class ColourBlazeScene {
   constructor(_app: Application, _onGameOver: (score: number) => void) {
     this.view.label      = 'ColourBlazeScene'
     this.gameLayer.label = 'gameLayer'
+    this.ballLayer.label = 'ballLayer'
+    this.aimLayer.label  = 'aimLayer'
+    this.fxLayer.label   = 'fxLayer'
     this.hudLayer.label  = 'hudLayer'
+    this.aimG.label      = 'aimGuide'
 
-    this.view.addChild(this.gameLayer, this.hudLayer)
+    this.aimLayer.addChild(this.aimG)
+
+    this.view.addChild(
+      this.gameLayer,
+      this.ballLayer,
+      this.aimLayer,
+      this.fxLayer,
+      this.hudLayer,
+    )
 
     this.scoreText = new Text({
       text: '0',
@@ -59,6 +97,9 @@ export class ColourBlazeScene {
     this.splashText.label = 'splashText'
 
     this.hudLayer.addChild(this.scoreText, this.levelText, this.splashText)
+
+    window.addEventListener('mousemove', this.handleMouseMove)
+    window.addEventListener('click', this.handleClick)
 
     this.onResize()
   }
@@ -88,23 +129,251 @@ export class ColourBlazeScene {
   }
 
   onResize() {
+    this.launcherY = H() - LAUNCHER_PAD
+
     const originX  = (W() - GRID_W) / 2
     this.wallLeft  = originX
     this.wallRight = originX + GRID_W
+    this.launcherX = originX + GRID_W / 2
 
     this.scoreText.position.set(this.wallLeft + 2, 26)
     this.levelText.position.set(this.wallRight - 2, 26)
     this.splashText.position.set(W() / 2, H() / 2)
+
+    this.aimDirty = true
   }
 
-  update(_delta: number) {}
+  update(delta: number) {
+    if (this.aimDirty) {
+      this.drawAimGuide()
+      this.aimDirty = false
+    }
+    this.updateBalls(delta)
+  }
 
   destroy() {
+    this.destroyed = true
+    window.removeEventListener('mousemove', this.handleMouseMove)
+    window.removeEventListener('click', this.handleClick)
+    for (const call of this.launchCalls) call.kill()
+    for (const child of this.fxLayer.children) gsap.killTweensOf(child)
+    gsap.killTweensOf(this.scoreText.scale)
     gsap.killTweensOf(this.splashText)
     this.view.destroy({ children: true })
   }
 
+  // ── input ────────────────────────────────────────────────────────────────────
+
+  private handleMouseMove = (e: MouseEvent) => {
+    const dx = e.clientX - this.launcherX
+    const dy = e.clientY - this.launcherY
+    let angle = Math.atan2(dy, dx)
+
+    // Clamp to the upward hemisphere, at least MIN_AIM_ANGLE above horizontal
+    if (angle > -MIN_AIM_ANGLE) {
+      angle = angle <= Math.PI / 2 ? -MIN_AIM_ANGLE : -Math.PI + MIN_AIM_ANGLE
+    } else if (angle < -Math.PI + MIN_AIM_ANGLE) {
+      angle = -Math.PI + MIN_AIM_ANGLE
+    }
+
+    this.aimVx    = Math.cos(angle)
+    this.aimVy    = Math.sin(angle)
+    this.aimDirty = true
+  }
+
+  private handleClick = () => {
+    if (!this.canFire || this.inFlight) return
+    this.inFlight = true
+    this.aimDirty = true
+
+    const vx = this.aimVx * BALL_SPEED
+    const vy = this.aimVy * BALL_SPEED
+
+    this.launchCalls     = []
+    this.pendingLaunches = this.ballsInVolley
+    for (let i = 0; i < this.ballsInVolley; i++) {
+      this.launchCalls.push(gsap.delayedCall(i * 0.08, () => {
+        if (this.destroyed) return
+        this.pendingLaunches--
+        const ball = new Ball(this.launcherX, this.launcherY, vx, vy)
+        this.balls.push(ball)
+        this.ballLayer.addChild(ball.view)
+      }))
+    }
+  }
+
+  // ── physics ──────────────────────────────────────────────────────────────────
+
+  private updateBalls(delta: number) {
+    if (!this.inFlight) return
+
+    let anyActive = false
+    for (const ball of this.balls) {
+      if (!ball.active) continue
+      anyActive = true
+
+      if (ball.hitCooldown > 0) ball.hitCooldown -= delta
+
+      let nx = ball.x + ball.vx * delta
+      let ny = ball.y + ball.vy * delta
+
+      // Wall bounce — grid edges, not screen edges. Math.abs prevents tunnelling.
+      if (nx - BALL_RADIUS < this.wallLeft) {
+        nx = this.wallLeft + BALL_RADIUS
+        ball.vx = Math.abs(ball.vx)
+      }
+      if (nx + BALL_RADIUS > this.wallRight) {
+        nx = this.wallRight - BALL_RADIUS
+        ball.vx = -Math.abs(ball.vx)
+      }
+
+      // Ceiling bounce
+      if (ny - BALL_RADIUS < 0) {
+        ny = BALL_RADIUS
+        ball.vy = Math.abs(ball.vy)
+      }
+
+      // Land at the launcher line
+      if (ny >= this.launcherY) {
+        ball.setPos(nx, this.launcherY)
+        ball.active = false
+        continue
+      }
+
+      ball.setPos(nx, ny)
+      this.checkCollisions(ball)
+    }
+
+    if (!anyActive && this.pendingLaunches === 0 && this.balls.length > 0) {
+      this.endVolley()
+    }
+  }
+
+  private checkCollisions(ball: Ball) {
+    if (ball.hitCooldown > 0) return
+
+    for (const block of this.blocks) {
+      const left   = block.x - BALL_RADIUS
+      const right  = block.x + BLOCK_W + BALL_RADIUS
+      const top    = block.y - BALL_RADIUS
+      const bottom = block.y + BLOCK_H + BALL_RADIUS
+      if (ball.x <= left || ball.x >= right || ball.y <= top || ball.y >= bottom) continue
+
+      // Resolve on the axis with the smaller penetration depth
+      const penLeft   = ball.x - left
+      const penRight  = right - ball.x
+      const penTop    = ball.y - top
+      const penBottom = bottom - ball.y
+      const minPen    = Math.min(penLeft, penRight, penTop, penBottom)
+
+      if (minPen === penLeft) {
+        ball.vx = -Math.abs(ball.vx)
+        ball.setPos(left, ball.y)
+      } else if (minPen === penRight) {
+        ball.vx = Math.abs(ball.vx)
+        ball.setPos(right, ball.y)
+      } else if (minPen === penTop) {
+        ball.vy = -Math.abs(ball.vy)
+        ball.setPos(ball.x, top)
+      } else {
+        ball.vy = Math.abs(ball.vy)
+        ball.setPos(ball.x, bottom)
+      }
+
+      ball.hitCooldown = 3
+      this.hitBlock(block)
+      break
+    }
+  }
+
+  private hitBlock(block: Block) {
+    if (!block.hit()) return
+
+    this.addScore(block.maxHp * 10)
+    this.spawnDeathParticles(block)
+    this.blocks = this.blocks.filter(b => b !== block)
+    block.view.destroy({ children: true })
+  }
+
+  private endVolley() {
+    this.inFlight = false
+    for (const ball of this.balls) ball.view.destroy()
+    this.balls    = []
+    this.aimDirty = true
+  }
+
+  // ── rendering ────────────────────────────────────────────────────────────────
+
+  private drawAimGuide() {
+    const g = this.aimG
+    g.clear()
+
+    // Launcher base
+    g.circle(this.launcherX, this.launcherY, 16).fill({ color: 0x222222 })
+    g.circle(this.launcherX, this.launcherY, 16).stroke({ color: ACCENT, width: 2 })
+    g.circle(this.launcherX, this.launcherY, BALL_RADIUS).fill({ color: 0xff8800 })
+
+    if (!this.canFire || this.inFlight) return
+
+    // Dotted guide simulating wall bounces, fading out
+    let x  = this.launcherX
+    let y  = this.launcherY
+    let vx = this.aimVx
+    const vy = this.aimVy
+    const STEPS   = 55
+    const SPACING = 16
+
+    for (let i = 0; i < STEPS; i++) {
+      x += vx * SPACING
+      y += vy * SPACING
+
+      if (x - BALL_RADIUS < this.wallLeft) {
+        x  = this.wallLeft + BALL_RADIUS
+        vx = Math.abs(vx)
+      }
+      if (x + BALL_RADIUS > this.wallRight) {
+        x  = this.wallRight - BALL_RADIUS
+        vx = -Math.abs(vx)
+      }
+      if (y < GRID_TOP_PAD) break
+
+      g.circle(x, y, 3).fill({ color: 0xffffff, alpha: 0.6 * (1 - i / STEPS) })
+    }
+  }
+
+  private spawnDeathParticles(block: Block) {
+    const cx = block.x + BLOCK_W / 2
+    const cy = block.y + BLOCK_H / 2
+
+    for (let i = 0; i < 10; i++) {
+      const p    = new Graphics()
+      const size = 3 + Math.random() * 4
+      p.label = 'particle'
+      p.rect(-size / 2, -size / 2, size, size).fill({ color: block.color })
+      p.position.set(cx, cy)
+      this.fxLayer.addChild(p)
+
+      const ang  = Math.random() * Math.PI * 2
+      const dist = 24 + Math.random() * 40
+      gsap.to(p, {
+        x: cx + Math.cos(ang) * dist,
+        y: cy + Math.sin(ang) * dist,
+        alpha: 0,
+        duration: 0.28 + Math.random() * 0.18,
+        ease: 'power2.out',
+        onComplete: () => { if (!p.destroyed) p.destroy() },
+      })
+    }
+  }
+
   // ── helpers ──────────────────────────────────────────────────────────────────
+
+  private addScore(points: number) {
+    this.score += points
+    this.scoreText.text = String(this.score)
+    this.scoreText.scale.set(1.3)
+    gsap.to(this.scoreText.scale, { x: 1, y: 1, duration: 0.25, ease: 'back.out(2)' })
+  }
 
   private showSplash(msg: string) {
     gsap.killTweensOf(this.splashText)

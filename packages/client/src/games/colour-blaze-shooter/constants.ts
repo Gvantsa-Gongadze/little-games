@@ -7,6 +7,7 @@ export const GRID_TOP_PAD = 90      // px from top of screen to first block row
 export const LAUNCHER_PAD = 80      // px from bottom of screen to launcher centre
 export const BALL_RADIUS  = 8       // px
 export const BALL_SPEED   = 14      // px per tick at deltaTime=1
+export const MIN_AIM_ANGLE = Math.PI / 18   // 10° — minimum aim angle from horizontal
 
 export const HUD_FONT = '"Press Start 2P"'
 export const ACCENT   = 0xff6600
