@@ -9,6 +9,7 @@ export const BALL_RADIUS  = 8       // px
 export const BALL_SPEED   = 14      // px per tick at deltaTime=1
 export const MIN_AIM_ANGLE = Math.PI / 18   // 10° — minimum aim angle from horizontal
 
+export const GAME_ID  = 'colour-blaze-shooter'   // Supabase game key (scores + progress)
 export const HUD_FONT = '"Press Start 2P"'
 export const ACCENT   = 0xff6600
 
