@@ -9,6 +9,8 @@ import {
 } from '../constants'
 import { Block } from '../entities/Block'
 import { Ball }  from '../entities/Ball'
+import { RetroAudio } from '../audio/RetroAudio'
+import T from '@/data/strings.json'
 
 const FONT = `${HUD_FONT}, monospace`
 const W    = () => window.innerWidth
@@ -91,13 +93,13 @@ export class ColourBlazeScene {
     )
 
     this.scoreText = new Text({
-      text: '0',
+      text: T.colourBlaze.scoreDefault,
       style: { fontFamily: FONT, fontSize: 13, fill: '#ffffff' },
     })
     this.scoreText.label = 'scoreText'
 
     this.levelText = new Text({
-      text: 'LV 1',
+      text: `${T.colourBlaze.levelPrefix} 1`,
       style: { fontFamily: FONT, fontSize: 11, fill: '#ffeecc' },
     })
     this.levelText.anchor.set(1, 0)
@@ -123,7 +125,7 @@ export class ColourBlazeScene {
 
   loadLevel(config: LevelConfig) {
     this.currentLevel   = config.level
-    this.levelText.text = `LV ${config.level}`
+    this.levelText.text = `${T.colourBlaze.levelPrefix} ${config.level}`
     this.onResize()
 
     // Clear any blocks from the previous level
@@ -141,7 +143,7 @@ export class ColourBlazeScene {
       })
     })
 
-    this.showSplash(`LEVEL  ${config.level}`)
+    this.showSplash(`${T.colourBlaze.levelSplash}  ${config.level}`)
   }
 
   onResize() {
@@ -204,6 +206,7 @@ export class ColourBlazeScene {
     this.inFlight = true
     this.canFire  = false
     this.aimDirty = true
+    RetroAudio.fire()
 
     const vx = this.aimVx * BALL_SPEED
     const vy = this.aimVy * BALL_SPEED
@@ -306,8 +309,12 @@ export class ColourBlazeScene {
   }
 
   private hitBlock(block: Block) {
-    if (!block.hit()) return
+    if (!block.hit()) {
+      RetroAudio.hit()
+      return
+    }
 
+    RetroAudio.brickBreak()
     this.addScore(block.maxHp * 10)
     this.spawnDeathParticles(block)
     this.blocks = this.blocks.filter(b => b !== block)
@@ -383,7 +390,8 @@ export class ColourBlazeScene {
       this.gameOver = true
       this.canFire  = false
       this.aimDirty = true
-      this.showSplash('GAME  OVER')
+      RetroAudio.gameOver()
+      this.showSplash(T.colourBlaze.gameOver)
       this.onGameOver(this.score)
       return
     }
@@ -415,6 +423,7 @@ export class ColourBlazeScene {
     const config = await this.requestLevel(this.currentLevel)
     if (this.destroyed || !config) return
 
+    RetroAudio.levelUp()
     this.loadLevel(config)
     this.canFire  = true
     this.aimDirty = true

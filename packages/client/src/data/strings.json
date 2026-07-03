@@ -52,5 +52,13 @@
     "score": "SCORE",
     "next": "NEXT",
     "scoreDefault": "0"
+  },
+  "colourBlaze": {
+    "scoreDefault": "0",
+    "levelPrefix": "LV",
+    "levelSplash": "LEVEL",
+    "gameOver": "GAME  OVER",
+    "score": "SCORE",
+    "connectError": "Failed to connect:"
   }
 }

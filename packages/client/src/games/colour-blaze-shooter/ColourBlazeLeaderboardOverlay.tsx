@@ -56,7 +56,7 @@ export function ColourBlazeLeaderboardOverlay({ score, onRestart }: Props) {
         </div>
 
         <div style={{ fontSize: 11, letterSpacing: 3, color: YELLOW, marginBottom: 24 }}>
-          {T.hud.scoreLabel} &nbsp; {String(score).padStart(6, '0')}
+          {T.colourBlaze.score} &nbsp; {String(score).padStart(6, '0')}
         </div>
 
         <div style={{ borderTop: `1px solid ${DIM}`, marginBottom: 18 }} />

@@ -4,6 +4,7 @@ import { joinColourBlazeRoom } from '@/engine/ColyseusClient'
 import type { Room } from 'colyseus.js'
 import { supabase } from '@/lib/supabase'
 import { loadProgress, saveProgress } from '@/lib/progress'
+import T from '@/data/strings.json'
 import { ColourBlazeScene } from './scenes/ColourBlazeScene'
 import { ColourBlazeLeaderboardOverlay } from './ColourBlazeLeaderboardOverlay'
 import { GAME_ID, type LevelConfig } from './constants'
@@ -101,7 +102,7 @@ export default function ColourBlazeCanvas({ onGameOver }: Props) {
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       width: '100vw', height: '100vh', color: '#ff4444', fontFamily: 'monospace',
     }}>
-      Failed to connect: {initError}
+      {T.colourBlaze.connectError} {initError}
     </div>
   )
 
