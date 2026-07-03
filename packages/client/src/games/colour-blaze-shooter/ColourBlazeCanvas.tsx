@@ -5,6 +5,7 @@ import type { Room } from 'colyseus.js'
 import { supabase } from '@/lib/supabase'
 import { loadProgress, saveProgress } from '@/lib/progress'
 import { ColourBlazeScene } from './scenes/ColourBlazeScene'
+import { ColourBlazeLeaderboardOverlay } from './ColourBlazeLeaderboardOverlay'
 import { GAME_ID, type LevelConfig } from './constants'
 
 interface Props { onGameOver?: (score: number) => void }
@@ -12,6 +13,8 @@ interface Props { onGameOver?: (score: number) => void }
 export default function ColourBlazeCanvas({ onGameOver }: Props) {
   const mountRef      = useRef<HTMLDivElement>(null)
   const onGameOverRef = useRef(onGameOver)
+  const userIdRef     = useRef<string | null>(null)
+  const [gameOver,  setGameOver]  = useState<{ score: number } | null>(null)
   const [initError, setInitError] = useState<string | null>(null)
 
   useEffect(() => { onGameOverRef.current = onGameOver })
@@ -22,7 +25,6 @@ export default function ColourBlazeCanvas({ onGameOver }: Props) {
     let room:  Room | null = null
     let scene: ColourBlazeScene | null = null
     let onResize: (() => void) | null  = null
-    let userId: string | null = null
 
     function requestLevel(level: number): Promise<LevelConfig | null> {
       return new Promise(resolve => {
@@ -38,6 +40,7 @@ export default function ColourBlazeCanvas({ onGameOver }: Props) {
     // reloading the page resumes at the saved level.
     async function requestLevelAndSave(level: number): Promise<LevelConfig | null> {
       const config = await requestLevel(level)
+      const userId = userIdRef.current
       if (config && userId) void saveProgress(GAME_ID, userId, level, 0)
       return config
     }
@@ -47,9 +50,9 @@ export default function ColourBlazeCanvas({ onGameOver }: Props) {
         joinColourBlazeRoom(),
         (async () => {
           const { data } = await supabase.auth.getUser()
-          userId = data.user?.id ?? null
-          if (!userId) return 1
-          const progress = await loadProgress(GAME_ID, userId)
+          userIdRef.current = data.user?.id ?? null
+          if (!userIdRef.current) return 1
+          const progress = await loadProgress(GAME_ID, userIdRef.current)
           return progress ? Math.max(1, progress.level) : 1
         })(),
         app.init({ resizeTo: window, backgroundColor: 0x111111 }),
@@ -66,8 +69,10 @@ export default function ColourBlazeCanvas({ onGameOver }: Props) {
 
       const s = new ColourBlazeScene(app, (score) => {
         // Run over: record best score; next run starts fresh at level 1
+        const userId = userIdRef.current
         if (userId) void saveProgress(GAME_ID, userId, 1, score)
         onGameOverRef.current?.(score)
+        setGameOver({ score })
       }, requestLevelAndSave)
       scene = s
       s.loadLevel(firstLevel)
@@ -100,5 +105,21 @@ export default function ColourBlazeCanvas({ onGameOver }: Props) {
     </div>
   )
 
-  return <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
+  return (
+    <>
+      <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
+      {gameOver && (
+        <ColourBlazeLeaderboardOverlay
+          score={gameOver.score}
+          onRestart={async () => {
+            // A lost run starts over: make sure level 1 is saved before the
+            // page reloads, even if the game-over save is still in flight.
+            const userId = userIdRef.current
+            if (userId) await saveProgress(GAME_ID, userId, 1, gameOver.score)
+            window.location.reload()
+          }}
+        />
+      )}
+    </>
+  )
 }
