@@ -138,7 +138,8 @@ T.home.*         title, tagline, signInTagline, usernamePlaceholder, emailPlaceh
 T.touch.*        left, right, thrust, fire, hyperspace
 T.arena2d.*      pressSpace
 T.bubble.*       pressSpace, gameOver, win, score, next, scoreDefault
-T.colourBlaze.*  scoreDefault, levelPrefix, levelSplash, gameOver, score, connectError
+T.colourBlaze.*  scoreDefault, levelPrefix, levelSplash, gameOver, score, connectError,
+                 plusOne, fastForward, ballCountPrefix
 ```
 
 **`data/games.ts`** — `GAMES: GameMeta[]`; `tag` type: `'2D' | '3D' | 'ARCADE' | 'CLASSIC'`
@@ -389,11 +390,16 @@ LAUNCHER_PAD  = 80      // px from bottom of screen to launcher centre
 BALL_RADIUS   = 8       // px
 BALL_SPEED    = 14      // px per tick at deltaTime=1
 MIN_AIM_ANGLE = π/18    // 10° — minimum aim angle from horizontal
+ROW_FILL_RATE = 0.7     // chance each new-row cell gets a block (min 1 per row)
+PICKUP_CHANCE = 0.25    // chance an empty new-row cell gets a +1 ball pickup
+PICKUP_RADIUS = 10      // px
+MAX_BALLS     = 20      // volley size cap
+FAST_FORWARD  = 2.5     // ball-speed multiplier while fast-forward is active
 GAME_ID       = 'colour-blaze-shooter'   // Supabase key for scores + game_progress
 HUD_FONT      = '"Press Start 2P"'
 ACCENT        = 0xff6600
 BLOCK_COLORS  = [0xff3333, 0xff8800, 0xffcc00, 0x33cc66, 0x33aaff, 0xaa44ff, 0xff44aa]
-LevelConfig   = { level: number; rows: { hp: number; color: number }[][] }
+LevelConfig   = { level: number; rows: ({ hp: number; color: number } | null)[][] }   // null = gap
 ```
 
 **`ColourBlazeCanvas.tsx`**
@@ -413,7 +419,7 @@ LevelConfig   = { level: number; rows: { hp: number; color: number }[][] }
 - PLAY AGAIN button + R key wired to `onRestart`. Strings from `T.common` / `T.leaderboard` / `T.colourBlaze`.
 
 **`audio/RetroAudio.ts`** — Web Audio API synthesiser (same pattern as asteroids: lazy `AudioContext`, `getCtx()` returns `null` until `'running'`, every method guards).
-- `fire()` ascending square blip · `hit()` quiet triangle click (fires often with 20-ball volleys) · `brickBreak()` white-noise pop · `levelUp()` ascending 4-note chime · `gameOver()` descending sawtooth sweep.
+- `fire()` ascending square blip · `hit()` quiet triangle click (fires often with 20-ball volleys) · `brickBreak()` white-noise pop · `collect()` two-note blip (+1 pickup) · `levelUp()` ascending 4-note chime · `gameOver()` descending sawtooth sweep.
 
 **`scenes/ColourBlazeScene.ts`** — main game loop. Rendering layers (back → front):
 
@@ -428,7 +434,9 @@ LevelConfig   = { level: number; rows: { hp: number; color: number }[][] }
 Constructor: `ColourBlazeScene(app, onGameOver, requestLevel)` — `requestLevel: (level) => Promise<LevelConfig | null>` is called on every level-up. All containers have `.label` set for PixiJS DevTools.
 
 Key fields:
-- `ballsInVolley` — starts at 3, +1 every 5 total blocks destroyed (`totalDestroyed`), cap 20.
+- `ballsInVolley` — starts at 3, +1 per collected pickup, cap `MAX_BALLS` (20). Shown as `xN` below the launcher (`ballCountText`).
+- `pickups: Pickup[]` — +1 ball pickups on the board; descend with the blocks each turn.
+- `fastForward` — a second click while balls are in flight enables ×`FAST_FORWARD` ball speed for the rest of the volley (`»»` indicator above the launcher); reset in `endVolley()`.
 - `inFlight` / `canFire` — `canFire` goes false on fire and only returns true after the descend + top-row spawn completes (or level load), so you can't fire mid-animation.
 - `gameOver` / `destroyed` — guard flags checked by every async continuation (`afterVolley`, `afterDrop`, `levelUp`, launch callbacks).
 - `wallLeft` / `wallRight` — grid edges (from `GRID_W`, centred on screen); balls bounce between these, not screen edges.
@@ -437,10 +445,12 @@ Key fields:
 Key behaviours:
 - **Aim** (`mousemove`): direction from launcher to cursor, clamped to the upward hemisphere ≥ `MIN_AIM_ANGLE` from horizontal; sets `aimDirty = true` only. The dotted guide (55 dots, 16 px spacing, fading, simulates wall bounces, stops at `GRID_TOP_PAD`) is redrawn once per frame in `update()` inside the `aimDirty` gate.
 - **Fire** (`click`): guards `canFire && !inFlight`; stagger-launches `ballsInVolley` balls with `gsap.delayedCall(i * 0.08)`; `pendingLaunches` counter prevents premature volley-end while staggered balls are queued; delayed calls stored in `launchCalls` and killed in `destroy()`.
-- **Physics** (`updateBalls`): wall bounce via `Math.abs` (prevents tunnelling), ceiling bounce at y=0, deactivate at `launcherY`.
+- **Physics** (`updateBalls`): wall bounce via `Math.abs` (prevents tunnelling), ceiling bounce at y=0, deactivate at `launcherY`. `update()` scales delta by `FAST_FORWARD` when fast-forward is active.
 - **Collision** (`checkCollisions`): AABB inflated by `BALL_RADIUS`, resolves on the smaller-penetration axis, `hitCooldown = 3` frames per ball.
+- **Pickup collection** (`collectPickups`): segment-distance test from the ball's previous to new position (`segmentDistSq`) so fast-forwarded balls can't tunnel past; catch radius `BALL_RADIUS + PICKUP_RADIUS`. Collect → +1 ball (cap), `collect()` sound, pop tween + floating `+1` text in `fxLayer`.
 - **Block destroyed**: score += `maxHp × 10` (GSAP scale-bounce on `scoreText.scale` directly — no PixiPlugin), 10-square radial particle burst in `fxLayer`, `brickBreak()` sound.
-- **Turn cycle**: `endVolley()` tweens balls back to the launcher (0.25 s, 0.03 s stagger) → `afterVolley()` → board empty ? `levelUp()` : `dropBlocks()` (one row, 0.32 s `power2.inOut`) → `afterDrop()` → lose check (`block.y + BLOCK_H >= launcherY - 10` → GAME OVER splash + `onGameOver(score)`) or `spawnTopRow()` (random HP `1..ceil(level*1.5)`, slides in with `back.out(1.2)`) → `canFire = true`.
+- **Turn cycle**: `endVolley()` tweens balls back to the launcher (0.25 s, 0.03 s stagger) → `afterVolley()` → board empty ? `levelUp()` : `dropBlocks()` (blocks AND pickups descend one row, 0.32 s `power2.inOut`) → `afterDrop()` → lose check (`block.y + BLOCK_H >= launcherY - 10` → GAME OVER splash + `onGameOver(score)`) or: pickups at the launcher line auto-collect, then `spawnTopRow()` → `canFire = true`.
+- **Top row** (`spawnTopRow`): each cell gets a block with `ROW_FILL_RATE` probability (never a fully empty row); empty cells have a `PICKUP_CHANCE` of spawning a `Pickup` instead. Both slide in from above with `back.out(1.2)`.
 - **Level-up** (`levelUp()`): increments level, awaits `requestLevel(level)` (server round-trip; the canvas wrapper persists the checkpoint), `loadLevel(config)` with `LEVEL n` splash + chime.
 - `destroy()`: removes `mousemove` + `click` listeners, kills `launchCalls` and all tweens on `fxLayer`/`ballLayer`/`gameLayer` children plus `scoreText.scale` and `splashText`, then destroys the container tree.
 
@@ -452,6 +462,10 @@ Key behaviours:
 **`entities/Ball.ts`**
 - `Ball(x, y, vx, vy)` — single `Graphics`: outer orange glow, body, hot core, specular highlight.
 - Fields: `x, y, vx, vy`, `active` (false once landed), `hitCooldown` (decremented per tick). `setPos()` syncs the view.
+
+**`entities/Pickup.ts`**
+- `Pickup(x, y)` — `Container` at the cell centre: accent-ringed circle + `+1` label (`T.colourBlaze.plusOne`).
+- Fields `x, y` are the centre coordinates used for the collection distance test; the scene mutates `y` on descend.
 
 ### Auth & Data (`lib/`, `hooks/`)
 
@@ -509,7 +523,7 @@ VITE_SUPABASE_ANON_KEY=<anon-key>
 - `maxClients = 1` — single-player room.
 - Stateless: no `RoomState`. Communication is purely message-based.
 - Handles `'request_level'` message `{ level }`:
-  - `generateLevel(level)`: `rowCount = min(2 + floor(level/2), 8)` rows × 7 cols; each cell `{ hp: random 1..ceil(level*1.5), color: random from 7-colour palette }`.
+  - `generateLevel(level)`: `rowCount = min(2 + floor(level/2), 8)` rows × 7 cols; each cell is `{ hp: random 1..ceil(level*1.5), color: random from 7-colour palette }` with `ROW_FILL_RATE = 0.7` probability, else `null` (gap); a fully empty row gets one forced block.
   - Responds with `client.send('level_data', { level, rows })`.
 - Called on initial load (with the player's saved level) and on every level-up.
 
@@ -624,7 +638,8 @@ Auth: Email provider enabled. Username stored in `auth.users.user_metadata.usern
 | Colour Blaze — core loop | ✓ Aim/fire volleys, AABB collision, turn cycle (descend + top row), endless server-generated levels |
 | Colour Blaze — persistence | ✓ `game_progress` table; reload resumes saved level; level-up checkpoints; loss resets to level 1 |
 | Colour Blaze — leaderboard | ✓ `ColourBlazeLeaderboardOverlay` (orange `#ff6600`); page submits via `submitScore(GAME_ID, …)` |
-| Colour Blaze — audio | ✓ `audio/RetroAudio.ts`: fire, hit, brickBreak, levelUp, gameOver |
+| Colour Blaze — audio | ✓ `audio/RetroAudio.ts`: fire, hit, brickBreak, collect, levelUp, gameOver |
+| Colour Blaze — pickups & pacing | ✓ Row gaps (`ROW_FILL_RATE`), +1 ball pickups in empty lanes, click-to-fast-forward volleys |
 
 ---
 

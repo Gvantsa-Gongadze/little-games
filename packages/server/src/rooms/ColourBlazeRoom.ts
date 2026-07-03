@@ -1,17 +1,26 @@
 import { Room, Client } from 'colyseus'
 
-const BLOCK_COLORS = [0xff3333, 0xff8800, 0xffcc00, 0x33cc66, 0x33aaff, 0xaa44ff, 0xff44aa]
-const COLS = 7
+const BLOCK_COLORS  = [0xff3333, 0xff8800, 0xffcc00, 0x33cc66, 0x33aaff, 0xaa44ff, 0xff44aa]
+const COLS          = 7
+const ROW_FILL_RATE = 0.7   // chance each cell gets a block; null = gap (min 1 block per row)
 
 function generateLevel(level: number) {
   const rowCount = Math.min(2 + Math.floor(level / 2), 8)
   const maxHp    = Math.ceil(level * 1.5)
-  const rows = Array.from({ length: rowCount }, () =>
-    Array.from({ length: COLS }, () => ({
-      hp:    1 + Math.floor(Math.random() * maxHp),
-      color: BLOCK_COLORS[Math.floor(Math.random() * BLOCK_COLORS.length)],
-    }))
-  )
+
+  const makeCell = () => ({
+    hp:    1 + Math.floor(Math.random() * maxHp),
+    color: BLOCK_COLORS[Math.floor(Math.random() * BLOCK_COLORS.length)],
+  })
+
+  const rows = Array.from({ length: rowCount }, () => {
+    const row = Array.from({ length: COLS }, () =>
+      Math.random() < ROW_FILL_RATE ? makeCell() : null
+    )
+    if (!row.some(Boolean)) row[Math.floor(Math.random() * COLS)] = makeCell()
+    return row
+  })
+
   return { level, rows }
 }
 

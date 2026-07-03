@@ -64,6 +64,26 @@ class RetroAudioClass {
     src.start()
   }
 
+  // Quick two-note ascending blip — +1 ball pickup collected
+  collect() {
+    const ctx   = this.getCtx()
+    if (!ctx) return
+    const freqs = [660, 990]
+    freqs.forEach((freq, i) => {
+      const osc  = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.type = 'square'
+      osc.frequency.value = freq
+      const t = ctx.currentTime + i * 0.06
+      gain.gain.setValueAtTime(0.12, t)
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.08)
+      osc.start(t)
+      osc.stop(t + 0.08)
+    })
+  }
+
   // Ascending 4-note chime — level up
   levelUp() {
     const ctx   = this.getCtx()

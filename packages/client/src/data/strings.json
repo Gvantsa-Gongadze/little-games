@@ -59,6 +59,9 @@
     "levelSplash": "LEVEL",
     "gameOver": "GAME  OVER",
     "score": "SCORE",
-    "connectError": "Failed to connect:"
+    "connectError": "Failed to connect:",
+    "plusOne": "+1",
+    "fastForward": "»»",
+    "ballCountPrefix": "x"
   }
 }

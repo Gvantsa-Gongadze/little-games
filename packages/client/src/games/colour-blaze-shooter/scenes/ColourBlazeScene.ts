@@ -4,17 +4,34 @@ import {
   HUD_FONT, ACCENT, GRID_W,
   BLOCK_COLS, BLOCK_W, BLOCK_H, BLOCK_GAP, GRID_TOP_PAD,
   LAUNCHER_PAD, BALL_RADIUS, BALL_SPEED, MIN_AIM_ANGLE,
-  BLOCK_COLORS,
+  BLOCK_COLORS, ROW_FILL_RATE, PICKUP_CHANCE, PICKUP_RADIUS,
+  MAX_BALLS, FAST_FORWARD,
   type LevelConfig,
 } from '../constants'
-import { Block } from '../entities/Block'
-import { Ball }  from '../entities/Ball'
+import { Block }  from '../entities/Block'
+import { Ball }   from '../entities/Ball'
+import { Pickup } from '../entities/Pickup'
 import { RetroAudio } from '../audio/RetroAudio'
 import T from '@/data/strings.json'
 
 const FONT = `${HUD_FONT}, monospace`
 const W    = () => window.innerWidth
 const H    = () => window.innerHeight
+
+// Squared distance from point (px, py) to segment (x1, y1)–(x2, y2).
+// Used for pickup collection so fast balls can't tunnel past a pickup.
+function segmentDistSq(
+  x1: number, y1: number, x2: number, y2: number, px: number, py: number,
+): number {
+  const dx    = x2 - x1
+  const dy    = y2 - y1
+  const lenSq = dx * dx + dy * dy
+  let t = lenSq === 0 ? 0 : ((px - x1) * dx + (py - y1) * dy) / lenSq
+  t = Math.max(0, Math.min(1, t))
+  const ex = px - (x1 + t * dx)
+  const ey = py - (y1 + t * dy)
+  return ex * ex + ey * ey
+}
 
 export class ColourBlazeScene {
   view = new Container()
@@ -29,16 +46,17 @@ export class ColourBlazeScene {
   private aimG = new Graphics()
 
   // Entities
-  private blocks: Block[] = []
-  private balls:  Ball[]  = []
+  private blocks:  Block[]  = []
+  private balls:   Ball[]   = []
+  private pickups: Pickup[] = []
 
   // Game state
   private score           = 0
   private currentLevel    = 1
-  private totalDestroyed  = 0
   private ballsInVolley   = 3
   private inFlight        = false
   private canFire         = true
+  private fastForward     = false
   private gameOver        = false
   private pendingLaunches = 0
   private destroyed       = false
@@ -65,6 +83,8 @@ export class ColourBlazeScene {
   private scoreText: Text
   private levelText: Text
   private splashText: Text
+  private ballCountText: Text
+  private ffText: Text
 
   constructor(
     _app: Application,
@@ -113,7 +133,25 @@ export class ColourBlazeScene {
     this.splashText.alpha = 0
     this.splashText.label = 'splashText'
 
-    this.hudLayer.addChild(this.scoreText, this.levelText, this.splashText)
+    this.ballCountText = new Text({
+      text: `${T.colourBlaze.ballCountPrefix}${this.ballsInVolley}`,
+      style: { fontFamily: FONT, fontSize: 10, fill: '#ffcc44' },
+    })
+    this.ballCountText.anchor.set(0.5)
+    this.ballCountText.label = 'ballCountText'
+
+    this.ffText = new Text({
+      text: T.colourBlaze.fastForward,
+      style: { fontFamily: FONT, fontSize: 14, fill: ACCENT },
+    })
+    this.ffText.anchor.set(0.5)
+    this.ffText.alpha = 0
+    this.ffText.label = 'fastForwardText'
+
+    this.hudLayer.addChild(
+      this.scoreText, this.levelText, this.splashText,
+      this.ballCountText, this.ffText,
+    )
 
     window.addEventListener('mousemove', this.handleMouseMove)
     window.addEventListener('click', this.handleClick)
@@ -128,13 +166,17 @@ export class ColourBlazeScene {
     this.levelText.text = `${T.colourBlaze.levelPrefix} ${config.level}`
     this.onResize()
 
-    // Clear any blocks from the previous level
+    // Clear any blocks and pickups from the previous level
     for (const block of this.blocks) block.view.destroy({ children: true })
     this.blocks = []
+    for (const pickup of this.pickups) pickup.view.destroy({ children: true })
+    this.pickups = []
 
-    // Build the block grid — centred horizontally, starting at GRID_TOP_PAD
+    // Build the block grid — centred horizontally, starting at GRID_TOP_PAD.
+    // null cells are gaps.
     config.rows.forEach((row, r) => {
       row.forEach((cell, c) => {
+        if (!cell) return
         const x = this.wallLeft + c * (BLOCK_W + BLOCK_GAP)
         const y = GRID_TOP_PAD  + r * (BLOCK_H + BLOCK_GAP)
         const block = new Block(x, y, cell.hp, cell.color)
@@ -157,6 +199,8 @@ export class ColourBlazeScene {
     this.scoreText.position.set(this.wallLeft + 2, 26)
     this.levelText.position.set(this.wallRight - 2, 26)
     this.splashText.position.set(W() / 2, H() / 2)
+    this.ballCountText.position.set(this.launcherX, this.launcherY + 30)
+    this.ffText.position.set(this.launcherX, this.launcherY - 34)
 
     this.aimDirty = true
   }
@@ -166,7 +210,7 @@ export class ColourBlazeScene {
       this.drawAimGuide()
       this.aimDirty = false
     }
-    this.updateBalls(delta)
+    this.updateBalls(this.inFlight && this.fastForward ? delta * FAST_FORWARD : delta)
   }
 
   destroy() {
@@ -176,7 +220,10 @@ export class ColourBlazeScene {
     for (const call of this.launchCalls) call.kill()
     for (const child of this.fxLayer.children)   gsap.killTweensOf(child)
     for (const child of this.ballLayer.children) gsap.killTweensOf(child)
-    for (const child of this.gameLayer.children) gsap.killTweensOf(child)
+    for (const child of this.gameLayer.children) {
+      gsap.killTweensOf(child)
+      gsap.killTweensOf(child.scale)   // pickup collect pop tween
+    }
     gsap.killTweensOf(this.scoreText.scale)
     gsap.killTweensOf(this.splashText)
     this.view.destroy({ children: true })
@@ -202,7 +249,16 @@ export class ColourBlazeScene {
   }
 
   private handleClick = () => {
-    if (!this.canFire || this.inFlight) return
+    // Second click while balls fly → fast-forward the rest of the volley
+    if (this.inFlight) {
+      if (!this.fastForward) {
+        this.fastForward  = true
+        this.ffText.alpha = 1
+      }
+      return
+    }
+
+    if (!this.canFire) return
     this.inFlight = true
     this.canFire  = false
     this.aimDirty = true
@@ -236,6 +292,8 @@ export class ColourBlazeScene {
 
       if (ball.hitCooldown > 0) ball.hitCooldown -= delta
 
+      const px = ball.x
+      const py = ball.y
       let nx = ball.x + ball.vx * delta
       let ny = ball.y + ball.vy * delta
 
@@ -258,11 +316,13 @@ export class ColourBlazeScene {
       // Land at the launcher line
       if (ny >= this.launcherY) {
         ball.setPos(nx, this.launcherY)
+        this.collectPickups(px, py, nx, this.launcherY)
         ball.active = false
         continue
       }
 
       ball.setPos(nx, ny)
+      this.collectPickups(px, py, nx, ny)
       this.checkCollisions(ball)
     }
 
@@ -319,18 +379,55 @@ export class ColourBlazeScene {
     this.spawnDeathParticles(block)
     this.blocks = this.blocks.filter(b => b !== block)
     block.view.destroy({ children: true })
+  }
 
-    // Every 5 total blocks destroyed → one more ball per volley (cap 20)
-    this.totalDestroyed++
-    if (this.totalDestroyed % 5 === 0 && this.ballsInVolley < 20) {
-      this.ballsInVolley++
-    }
+  // ── pickups ──────────────────────────────────────────────────────────────────
+
+  // Segment test against the ball's movement this tick — a fast-forwarded ball
+  // can travel further per tick than the pickup's catch radius.
+  private collectPickups(x1: number, y1: number, x2: number, y2: number) {
+    if (this.pickups.length === 0) return
+    const catchR = BALL_RADIUS + PICKUP_RADIUS
+
+    this.pickups = this.pickups.filter(p => {
+      if (segmentDistSq(x1, y1, x2, y2, p.x, p.y) > catchR * catchR) return true
+      this.collectPickup(p)
+      return false
+    })
+  }
+
+  private collectPickup(p: Pickup) {
+    if (this.ballsInVolley < MAX_BALLS) this.ballsInVolley++
+    this.ballCountText.text = `${T.colourBlaze.ballCountPrefix}${this.ballsInVolley}`
+    RetroAudio.collect()
+
+    // Pop the pickup and float a +1 up from where it was
+    gsap.to(p.view.scale, { x: 1.6, y: 1.6, duration: 0.18, ease: 'back.out(2)' })
+    gsap.to(p.view, {
+      alpha: 0, duration: 0.18, ease: 'power2.out',
+      onComplete: () => { if (!p.view.destroyed) p.view.destroy({ children: true }) },
+    })
+
+    const t = new Text({
+      text:  T.colourBlaze.plusOne,
+      style: { fontFamily: FONT, fontSize: 10, fill: '#ffcc44' },
+    })
+    t.anchor.set(0.5)
+    t.position.set(p.x, p.y)
+    t.label = 'plusOneFx'
+    this.fxLayer.addChild(t)
+    gsap.to(t, {
+      y: p.y - 28, alpha: 0, duration: 0.5, ease: 'power2.out',
+      onComplete: () => { if (!t.destroyed) t.destroy() },
+    })
   }
 
   // ── turn cycle ───────────────────────────────────────────────────────────────
 
   private endVolley() {
-    this.inFlight = false
+    this.inFlight     = false
+    this.fastForward  = false
+    this.ffText.alpha = 0
 
     // Tween all landed balls back to the launcher, then advance the turn
     const returning = this.balls
@@ -366,19 +463,20 @@ export class ColourBlazeScene {
 
   private dropBlocks() {
     const dropBy = BLOCK_H + BLOCK_GAP
-    const total  = this.blocks.length
+    const total  = this.blocks.length + this.pickups.length
     let   done   = 0
+    const onDone = () => {
+      done++
+      if (done === total) this.afterDrop()
+    }
 
     for (const block of this.blocks) {
       block.y += dropBy
-      gsap.to(block.view, {
-        y: block.y,
-        duration: 0.32, ease: 'power2.inOut',
-        onComplete: () => {
-          done++
-          if (done === total) this.afterDrop()
-        },
-      })
+      gsap.to(block.view, { y: block.y, duration: 0.32, ease: 'power2.inOut', onComplete: onDone })
+    }
+    for (const pickup of this.pickups) {
+      pickup.y += dropBy
+      gsap.to(pickup.view, { y: pickup.y, duration: 0.32, ease: 'power2.inOut', onComplete: onDone })
     }
   }
 
@@ -396,25 +494,48 @@ export class ColourBlazeScene {
       return
     }
 
+    // Pickups that reached the launcher line are collected automatically
+    for (const pickup of [...this.pickups]) {
+      if (pickup.y + PICKUP_RADIUS >= this.launcherY - 10) {
+        this.pickups = this.pickups.filter(p => p !== pickup)
+        this.collectPickup(pickup)
+      }
+    }
+
     this.spawnTopRow()
     this.canFire  = true
     this.aimDirty = true
   }
 
   private spawnTopRow() {
-    const maxHp = Math.max(1, Math.ceil(this.currentLevel * 1.5))
+    const maxHp     = Math.max(1, Math.ceil(this.currentLevel * 1.5))
+    const slideFrom = -(BLOCK_H + BLOCK_GAP)
+
+    // Each cell gets a block with ROW_FILL_RATE probability — never an empty row
+    const hasBlock = Array.from({ length: BLOCK_COLS }, () => Math.random() < ROW_FILL_RATE)
+    if (!hasBlock.some(Boolean)) hasBlock[Math.floor(Math.random() * BLOCK_COLS)] = true
 
     for (let c = 0; c < BLOCK_COLS; c++) {
-      const x     = this.wallLeft + c * (BLOCK_W + BLOCK_GAP)
-      const hp    = 1 + Math.floor(Math.random() * maxHp)
-      const color = BLOCK_COLORS[Math.floor(Math.random() * BLOCK_COLORS.length)]
-      const block = new Block(x, GRID_TOP_PAD, hp, color)
-      this.blocks.push(block)
-      this.gameLayer.addChild(block.view)
+      const x = this.wallLeft + c * (BLOCK_W + BLOCK_GAP)
 
-      // Slide in from above
-      block.view.y = GRID_TOP_PAD - (BLOCK_H + BLOCK_GAP)
-      gsap.to(block.view, { y: GRID_TOP_PAD, duration: 0.4, ease: 'back.out(1.2)' })
+      if (hasBlock[c]) {
+        const hp    = 1 + Math.floor(Math.random() * maxHp)
+        const color = BLOCK_COLORS[Math.floor(Math.random() * BLOCK_COLORS.length)]
+        const block = new Block(x, GRID_TOP_PAD, hp, color)
+        this.blocks.push(block)
+        this.gameLayer.addChild(block.view)
+
+        block.view.y = GRID_TOP_PAD + slideFrom
+        gsap.to(block.view, { y: GRID_TOP_PAD, duration: 0.4, ease: 'back.out(1.2)' })
+      } else if (Math.random() < PICKUP_CHANCE) {
+        // Empty lane → chance of a +1 ball pickup, centred in the cell
+        const pickup = new Pickup(x + BLOCK_W / 2, GRID_TOP_PAD + BLOCK_H / 2)
+        this.pickups.push(pickup)
+        this.gameLayer.addChild(pickup.view)
+
+        pickup.view.y = pickup.y + slideFrom
+        gsap.to(pickup.view, { y: pickup.y, duration: 0.4, ease: 'back.out(1.2)' })
+      }
     }
   }
 
