@@ -2,8 +2,9 @@ import { Application, Container, Graphics, Text } from 'pixi.js'
 import { gsap } from 'gsap'
 import {
   HUD_FONT, ACCENT, GRID_W,
-  BLOCK_W, BLOCK_H, BLOCK_GAP, GRID_TOP_PAD,
+  BLOCK_COLS, BLOCK_W, BLOCK_H, BLOCK_GAP, GRID_TOP_PAD,
   LAUNCHER_PAD, BALL_RADIUS, BALL_SPEED, MIN_AIM_ANGLE,
+  BLOCK_COLORS,
   type LevelConfig,
 } from '../constants'
 import { Block } from '../entities/Block'
@@ -31,11 +32,18 @@ export class ColourBlazeScene {
 
   // Game state
   private score           = 0
+  private currentLevel    = 1
+  private totalDestroyed  = 0
   private ballsInVolley   = 3
   private inFlight        = false
   private canFire         = true
+  private gameOver        = false
   private pendingLaunches = 0
   private destroyed       = false
+
+  // Callbacks
+  private onGameOver:   (score: number) => void
+  private requestLevel: (level: number) => Promise<LevelConfig | null>
 
   // Aim (normalised direction, defaults straight up)
   private aimVx    = 0
@@ -56,7 +64,14 @@ export class ColourBlazeScene {
   private levelText: Text
   private splashText: Text
 
-  constructor(_app: Application, _onGameOver: (score: number) => void) {
+  constructor(
+    _app: Application,
+    onGameOver: (score: number) => void,
+    requestLevel: (level: number) => Promise<LevelConfig | null>,
+  ) {
+    this.onGameOver   = onGameOver
+    this.requestLevel = requestLevel
+
     this.view.label      = 'ColourBlazeScene'
     this.gameLayer.label = 'gameLayer'
     this.ballLayer.label = 'ballLayer'
@@ -107,6 +122,7 @@ export class ColourBlazeScene {
   // ── public API ──────────────────────────────────────────────────────────────
 
   loadLevel(config: LevelConfig) {
+    this.currentLevel   = config.level
     this.levelText.text = `LV ${config.level}`
     this.onResize()
 
@@ -156,7 +172,9 @@ export class ColourBlazeScene {
     window.removeEventListener('mousemove', this.handleMouseMove)
     window.removeEventListener('click', this.handleClick)
     for (const call of this.launchCalls) call.kill()
-    for (const child of this.fxLayer.children) gsap.killTweensOf(child)
+    for (const child of this.fxLayer.children)   gsap.killTweensOf(child)
+    for (const child of this.ballLayer.children) gsap.killTweensOf(child)
+    for (const child of this.gameLayer.children) gsap.killTweensOf(child)
     gsap.killTweensOf(this.scoreText.scale)
     gsap.killTweensOf(this.splashText)
     this.view.destroy({ children: true })
@@ -184,6 +202,7 @@ export class ColourBlazeScene {
   private handleClick = () => {
     if (!this.canFire || this.inFlight) return
     this.inFlight = true
+    this.canFire  = false
     this.aimDirty = true
 
     const vx = this.aimVx * BALL_SPEED
@@ -293,12 +312,111 @@ export class ColourBlazeScene {
     this.spawnDeathParticles(block)
     this.blocks = this.blocks.filter(b => b !== block)
     block.view.destroy({ children: true })
+
+    // Every 5 total blocks destroyed → one more ball per volley (cap 20)
+    this.totalDestroyed++
+    if (this.totalDestroyed % 5 === 0 && this.ballsInVolley < 20) {
+      this.ballsInVolley++
+    }
   }
+
+  // ── turn cycle ───────────────────────────────────────────────────────────────
 
   private endVolley() {
     this.inFlight = false
-    for (const ball of this.balls) ball.view.destroy()
-    this.balls    = []
+
+    // Tween all landed balls back to the launcher, then advance the turn
+    const returning = this.balls
+    this.balls = []
+    let done = 0
+
+    returning.forEach((ball, i) => {
+      gsap.to(ball.view, {
+        x: this.launcherX, y: this.launcherY,
+        duration: 0.25, delay: i * 0.03, ease: 'power2.in',
+        onComplete: () => {
+          if (!ball.view.destroyed) ball.view.destroy()
+          done++
+          if (done === returning.length) this.afterVolley()
+        },
+      })
+    })
+
+    if (returning.length === 0) this.afterVolley()
+  }
+
+  private afterVolley() {
+    if (this.destroyed || this.gameOver) return
+
+    // Board cleared → next level
+    if (this.blocks.length === 0) {
+      void this.levelUp()
+      return
+    }
+
+    this.dropBlocks()
+  }
+
+  private dropBlocks() {
+    const dropBy = BLOCK_H + BLOCK_GAP
+    const total  = this.blocks.length
+    let   done   = 0
+
+    for (const block of this.blocks) {
+      block.y += dropBy
+      gsap.to(block.view, {
+        y: block.y,
+        duration: 0.32, ease: 'power2.inOut',
+        onComplete: () => {
+          done++
+          if (done === total) this.afterDrop()
+        },
+      })
+    }
+  }
+
+  private afterDrop() {
+    if (this.destroyed || this.gameOver) return
+
+    // Lose: a block reached the launcher line
+    if (this.blocks.some(b => b.y + BLOCK_H >= this.launcherY - 10)) {
+      this.gameOver = true
+      this.canFire  = false
+      this.aimDirty = true
+      this.showSplash('GAME  OVER')
+      this.onGameOver(this.score)
+      return
+    }
+
+    this.spawnTopRow()
+    this.canFire  = true
+    this.aimDirty = true
+  }
+
+  private spawnTopRow() {
+    const maxHp = Math.max(1, Math.ceil(this.currentLevel * 1.5))
+
+    for (let c = 0; c < BLOCK_COLS; c++) {
+      const x     = this.wallLeft + c * (BLOCK_W + BLOCK_GAP)
+      const hp    = 1 + Math.floor(Math.random() * maxHp)
+      const color = BLOCK_COLORS[Math.floor(Math.random() * BLOCK_COLORS.length)]
+      const block = new Block(x, GRID_TOP_PAD, hp, color)
+      this.blocks.push(block)
+      this.gameLayer.addChild(block.view)
+
+      // Slide in from above
+      block.view.y = GRID_TOP_PAD - (BLOCK_H + BLOCK_GAP)
+      gsap.to(block.view, { y: GRID_TOP_PAD, duration: 0.4, ease: 'back.out(1.2)' })
+    }
+  }
+
+  private async levelUp() {
+    this.currentLevel++
+    const config = await this.requestLevel(this.currentLevel)
+    if (this.destroyed || !config) return
+
+    this.loadLevel(config)
+    this.canFire  = true
     this.aimDirty = true
   }
 

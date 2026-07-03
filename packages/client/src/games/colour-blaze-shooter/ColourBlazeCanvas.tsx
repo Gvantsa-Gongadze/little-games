@@ -44,7 +44,7 @@ export default function ColourBlazeCanvas({ onGameOver }: Props) {
 
       const s = new ColourBlazeScene(app, (score) => {
         onGameOverRef.current?.(score)
-      })
+      }, requestLevel)
       scene = s
       s.loadLevel(firstLevel)
       app.stage.addChild(s.view)
