@@ -14,6 +14,11 @@ export const PICKUP_CHANCE = 0.25   // chance an empty new-row cell gets a +1 ba
 export const PICKUP_RADIUS = 10     // px
 export const MAX_BALLS     = 20     // volley size cap
 export const FAST_FORWARD  = 2.5    // ball-speed multiplier while fast-forward is active
+export const MOVING_LAUNCH = true   // next volley fires from where the first ball landed
+
+export const SPECIAL_BLOCK_RATE = 0.12   // chance a new-row block is a special type
+export type SpecialBlockType = 'bomb' | 'laser' | 'steel'
+export const SPECIAL_BLOCK_TYPES: SpecialBlockType[] = ['bomb', 'laser', 'steel']
 
 export const GAME_ID  = 'colour-blaze-shooter'   // Supabase game key (scores + progress)
 export const HUD_FONT = '"Press Start 2P"'

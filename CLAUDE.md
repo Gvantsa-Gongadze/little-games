@@ -395,6 +395,9 @@ PICKUP_CHANCE = 0.25    // chance an empty new-row cell gets a +1 ball pickup
 PICKUP_RADIUS = 10      // px
 MAX_BALLS     = 20      // volley size cap
 FAST_FORWARD  = 2.5     // ball-speed multiplier while fast-forward is active
+MOVING_LAUNCH = true    // next volley fires from where the first ball landed (flip to compare)
+SPECIAL_BLOCK_RATE = 0.12   // chance a new-row block is special
+SpecialBlockType   = 'bomb' | 'laser' | 'steel'
 GAME_ID       = 'colour-blaze-shooter'   // Supabase key for scores + game_progress
 HUD_FONT      = '"Press Start 2P"'
 ACCENT        = 0xff6600
@@ -441,26 +444,30 @@ Key fields:
 - `inFlight` / `canFire` — `canFire` goes false on fire and only returns true after the descend + top-row spawn completes (or level load), so you can't fire mid-animation.
 - `gameOver` / `destroyed` — guard flags checked by every async continuation (`afterVolley`, `afterDrop`, `levelUp`, launch callbacks).
 - `wallLeft` / `wallRight` — grid edges (from `GRID_W`, centred on screen); balls bounce between these, not screen edges.
-- `launcherX` / `launcherY` — fixed launch origin, bottom centre of the grid.
+- `launcherX` / `launcherY` — launch origin. With `MOVING_LAUNCH`, `endVolley()` moves `launcherX` to `nextLauncherX` (where the FIRST ball of the volley landed, clamped 20 px inside the walls); `onResize`/level load re-centres it. `positionLauncherHud()` keeps the `xN` counter and `»»` indicator attached.
+- `touchAiming` / `lastTouchTime` — touch drag state + guard against the synthetic click browsers fire after a touch.
 
 Key behaviours:
 - **Aim** (`mousemove`): direction from launcher to cursor, clamped to the upward hemisphere ≥ `MIN_AIM_ANGLE` from horizontal; sets `aimDirty = true` only. The dotted guide (55 dots, 16 px spacing, fading, simulates wall bounces, stops at `GRID_TOP_PAD` **or the first block hit** via `guideBlocked()` — same inflated-AABB test as collisions) is redrawn once per frame in `update()` inside the `aimDirty` gate.
-- **Fire** (`click`): guards `canFire && !inFlight`; stagger-launches `ballsInVolley` balls with `gsap.delayedCall(i * 0.08)`; `pendingLaunches` counter prevents premature volley-end while staggered balls are queued; delayed calls stored in `launchCalls` and killed in `destroy()`.
+- **Fire** (`fire()`, shared by mouse and touch): guards `canFire`; stagger-launches `ballsInVolley` balls with `gsap.delayedCall(i * 0.08)`; `pendingLaunches` counter prevents premature volley-end while staggered balls are queued; delayed calls stored in `launchCalls` and killed in `destroy()`.
+- **Input routing**: mouse — `mousemove` aims, canvas `click` fires (or fast-forwards mid-flight). Touch — drag on the canvas aims (`touchmove` preventDefaults to stop page scroll), release fires, tap mid-flight fast-forwards. Both `click` and `touchstart` require `e.target instanceof HTMLCanvasElement` so DOM buttons (BackButton, overlay) are untouched; `lastTouchTime` suppresses the synthetic click after a touch sequence.
 - **Physics** (`updateBalls`): wall bounce via `Math.abs` (prevents tunnelling), ceiling bounce at y=0, deactivate at `launcherY`. `update()` scales delta by `FAST_FORWARD` when fast-forward is active.
 - **Collision** (`checkCollisions`): AABB inflated by `BALL_RADIUS`, resolves on the smaller-penetration axis, `hitCooldown = 3` frames per ball.
 - **Pickup collection** (`collectPickups`): segment-distance test from the ball's previous to new position (`segmentDistSq`) so fast-forwarded balls can't tunnel past; catch radius `BALL_RADIUS + PICKUP_RADIUS`. Collect → +1 ball (cap), `collect()` sound, pop tween + floating `+1` text in `fxLayer`.
-- **Block destroyed**: score += `maxHp × 10` (GSAP scale-bounce on `scoreText.scale` directly — no PixiPlugin), 10-square radial particle burst in `fxLayer`, `brickBreak()` sound.
+- **Block destroyed** (`destroyBlock`, shared path with a membership guard so chains can't double-destroy): score += `maxHp × 10` (GSAP scale-bounce on `scoreText.scale` directly — no PixiPlugin), 10-square radial particle burst in `fxLayer`, `brickBreak()` sound. Then special dispatch: **bomb** → `explodeBomb` destroys all non-steel blocks in the 8 surrounding cells (bombs chain recursively); **laser** → `fireLaser` clears the block's entire row AND column (non-steel) with a fading beam flash in `fxLayer`.
+- **Steel blocks**: `hit()` returns false (immune, balls just bounce); excluded from bomb/laser damage and from the danger warning; crumble harmlessly (particles, no score) when they reach the lose line in `afterDrop`; the level-clear check in `afterVolley` counts only destructible blocks (leftover steel crumbles on level-up).
 - **Turn cycle**: `endVolley()` tweens balls back to the launcher (0.25 s, 0.03 s stagger) → `afterVolley()` → board empty ? `levelUp()` : `dropBlocks()` (blocks AND pickups descend one row, 0.32 s `power2.inOut`) → `afterDrop()` → lose check (`block.y + BLOCK_H >= launcherY - 10` → GAME OVER splash + `onGameOver(score)`) or: pickups at the launcher line auto-collect, then `spawnTopRow()` → `canFire = true`.
-- **Top row** (`spawnTopRow`): each cell gets a block with `ROW_FILL_RATE` probability (never a fully empty row); empty cells have a `PICKUP_CHANCE` of spawning a `Pickup` instead. Both slide in from above with `back.out(1.2)`.
+- **Top row** (`spawnTopRow`): each cell gets a block with `ROW_FILL_RATE` probability (never a fully empty row); a spawned block is special with `SPECIAL_BLOCK_RATE` probability (uniform bomb/laser/steel, 1 HP); empty cells have a `PICKUP_CHANCE` of spawning a `Pickup` instead. All slide in from above with `back.out(1.2)`. Specials spawn client-side only — server-generated level rows are plain blocks.
 - **Danger warning** (`updateDangerState`, called after each descent and on level load): blocks that will cross the lose line on the NEXT descent get `setDanger(true)` (red border + overlay) and a looping alpha pulse; `hitBlock` kills the pulse tween before destroying the view.
 - **Level-up** (`levelUp()`): increments level, awaits `requestLevel(level)` (server round-trip; the canvas wrapper persists the checkpoint), `loadLevel(config)` with `LEVEL n` splash + chime.
 - `destroy()`: removes `mousemove` + `click` listeners, kills `launchCalls` and all tweens on `fxLayer`/`ballLayer`/`gameLayer` children plus `scoreText.scale` and `splashText`, then destroys the container tree.
 
 **`entities/Block.ts`**
-- `Block(x, y, hp, color)` — `Container` with `Graphics` body (drop shadow → colour fill → specular highlight) + centred HP `Text` label.
-- Fill alpha = `0.42 + 0.58 × (hp/maxHp)` — desaturates as HP drains.
-- `hit()` → decrements HP, redraws, returns `true` when destroyed.
+- `Block(x, y, hp, color, special?)` — `Container` with `Graphics` body (drop shadow → colour fill → specular highlight) + centred HP `Text` label.
+- Fill alpha = `0.42 + 0.58 × (hp/maxHp)` — desaturates as HP drains (steel stays solid).
+- `hit()` → decrements HP, redraws, returns `true` when destroyed. Steel always returns `false`.
 - `setDanger(on)` → toggles a red warning border + red overlay fill (drawn when one descent from the lose line).
+- Special bodies + icons (echoing the bubble shooter's special language): **bomb** dark `0x2c2c2c` + fuse icon, **laser** gold `0xf4d03f` + white cross lines, **steel** gray `0x7f8c8d` + dark X + corner rivets, HP label hidden.
 
 **`entities/Ball.ts`**
 - `Ball(x, y, vx, vy)` — single `Graphics`: outer orange glow, body, hot core, specular highlight.
@@ -643,6 +650,8 @@ Auth: Email provider enabled. Username stored in `auth.users.user_metadata.usern
 | Colour Blaze — leaderboard | ✓ `ColourBlazeLeaderboardOverlay` (orange `#ff6600`); page submits via `submitScore(GAME_ID, …)` |
 | Colour Blaze — audio | ✓ `audio/RetroAudio.ts`: fire, hit, brickBreak, collect, levelUp, gameOver |
 | Colour Blaze — pickups & pacing | ✓ Row gaps (`ROW_FILL_RATE`), +1 ball pickups in empty lanes, click-to-fast-forward volleys |
+| Colour Blaze — special blocks | ✓ Bomb (8-cell blast, chains), laser (row + column beam), steel (immune, crumbles at the line) |
+| Colour Blaze — touch + moving launch | ✓ Drag-to-aim / release-to-fire touch controls; launcher moves to the first ball's landing spot (`MOVING_LAUNCH`) |
 
 ---
 

@@ -5,7 +5,8 @@ import {
   BLOCK_COLS, BLOCK_W, BLOCK_H, BLOCK_GAP, GRID_TOP_PAD,
   LAUNCHER_PAD, BALL_RADIUS, BALL_SPEED, MIN_AIM_ANGLE,
   BLOCK_COLORS, ROW_FILL_RATE, PICKUP_CHANCE, PICKUP_RADIUS,
-  MAX_BALLS, FAST_FORWARD,
+  MAX_BALLS, FAST_FORWARD, MOVING_LAUNCH,
+  SPECIAL_BLOCK_RATE, SPECIAL_BLOCK_TYPES,
   type LevelConfig,
 } from '../constants'
 import { Block }  from '../entities/Block'
@@ -70,11 +71,16 @@ export class ColourBlazeScene {
   private aimVy    = -1
   private aimDirty = true
 
+  // Touch input
+  private touchAiming   = false
+  private lastTouchTime = 0
+
   // Layout
   private launcherX = 0
   private launcherY = 0
   private wallLeft  = 0
   private wallRight = 0
+  private nextLauncherX: number | null = null   // where the first ball of the volley landed
 
   // GSAP handles
   private launchCalls: gsap.core.Tween[] = []
@@ -155,6 +161,9 @@ export class ColourBlazeScene {
 
     window.addEventListener('mousemove', this.handleMouseMove)
     window.addEventListener('click', this.handleClick)
+    window.addEventListener('touchstart', this.handleTouchStart, { passive: true })
+    window.addEventListener('touchmove',  this.handleTouchMove,  { passive: false })
+    window.addEventListener('touchend',   this.handleTouchEnd,   { passive: false })
 
     this.onResize()
   }
@@ -200,10 +209,14 @@ export class ColourBlazeScene {
     this.scoreText.position.set(this.wallLeft + 2, 26)
     this.levelText.position.set(this.wallRight - 2, 26)
     this.splashText.position.set(W() / 2, H() / 2)
-    this.ballCountText.position.set(this.launcherX, this.launcherY + 30)
-    this.ffText.position.set(this.launcherX, this.launcherY - 34)
+    this.positionLauncherHud()
 
     this.aimDirty = true
+  }
+
+  private positionLauncherHud() {
+    this.ballCountText.position.set(this.launcherX, this.launcherY + 30)
+    this.ffText.position.set(this.launcherX, this.launcherY - 34)
   }
 
   update(delta: number) {
@@ -218,6 +231,9 @@ export class ColourBlazeScene {
     this.destroyed = true
     window.removeEventListener('mousemove', this.handleMouseMove)
     window.removeEventListener('click', this.handleClick)
+    window.removeEventListener('touchstart', this.handleTouchStart)
+    window.removeEventListener('touchmove',  this.handleTouchMove)
+    window.removeEventListener('touchend',   this.handleTouchEnd)
     for (const call of this.launchCalls) call.kill()
     for (const child of this.fxLayer.children)   gsap.killTweensOf(child)
     for (const child of this.ballLayer.children) gsap.killTweensOf(child)
@@ -232,9 +248,9 @@ export class ColourBlazeScene {
 
   // ── input ────────────────────────────────────────────────────────────────────
 
-  private handleMouseMove = (e: MouseEvent) => {
-    const dx = e.clientX - this.launcherX
-    const dy = e.clientY - this.launcherY
+  private updateAim(cx: number, cy: number) {
+    const dx = cx - this.launcherX
+    const dy = cy - this.launcherY
     let angle = Math.atan2(dy, dx)
 
     // Clamp to the upward hemisphere, at least MIN_AIM_ANGLE above horizontal
@@ -249,16 +265,63 @@ export class ColourBlazeScene {
     this.aimDirty = true
   }
 
-  private handleClick = () => {
-    // Second click while balls fly → fast-forward the rest of the volley
+  private enableFastForward() {
+    if (!this.fastForward) {
+      this.fastForward  = true
+      this.ffText.alpha = 1
+    }
+  }
+
+  private handleMouseMove = (e: MouseEvent) => {
+    this.updateAim(e.clientX, e.clientY)
+  }
+
+  private handleClick = (e: MouseEvent) => {
+    // Ignore the synthetic click browsers fire after a touch sequence
+    if (Date.now() - this.lastTouchTime < 500) return
+    // Only clicks on the canvas count — not BackButton or overlay buttons
+    if (!(e.target instanceof HTMLCanvasElement)) return
+
     if (this.inFlight) {
-      if (!this.fastForward) {
-        this.fastForward  = true
-        this.ffText.alpha = 1
-      }
+      this.enableFastForward()
+      return
+    }
+    this.fire()
+  }
+
+  // Touch: drag anywhere on the canvas to aim, release to fire.
+  private handleTouchStart = (e: TouchEvent) => {
+    this.lastTouchTime = Date.now()
+    if (!(e.target instanceof HTMLCanvasElement)) return
+
+    if (this.inFlight) {
+      this.enableFastForward()
       return
     }
 
+    const t = e.touches[0]
+    if (!t || !this.canFire) return
+    this.touchAiming = true
+    this.updateAim(t.clientX, t.clientY)
+  }
+
+  private handleTouchMove = (e: TouchEvent) => {
+    if (!this.touchAiming) return
+    e.preventDefault()   // stop the page scrolling while aiming
+    this.lastTouchTime = Date.now()
+    const t = e.touches[0]
+    if (t) this.updateAim(t.clientX, t.clientY)
+  }
+
+  private handleTouchEnd = (e: TouchEvent) => {
+    this.lastTouchTime = Date.now()
+    if (!this.touchAiming) return
+    e.preventDefault()   // suppress the synthetic mouse events
+    this.touchAiming = false
+    this.fire()
+  }
+
+  private fire() {
     if (!this.canFire) return
     this.inFlight = true
     this.canFire  = false
@@ -318,6 +381,13 @@ export class ColourBlazeScene {
       if (ny >= this.launcherY) {
         ball.setPos(nx, this.launcherY)
         this.collectPickups(px, py, nx, this.launcherY)
+        // First ball down marks the next volley's launch point
+        if (this.nextLauncherX === null) {
+          this.nextLauncherX = Math.max(
+            this.wallLeft  + BALL_RADIUS + 20,
+            Math.min(this.wallRight - BALL_RADIUS - 20, nx),
+          )
+        }
         ball.active = false
         continue
       }
@@ -374,13 +444,57 @@ export class ColourBlazeScene {
       RetroAudio.hit()
       return
     }
+    this.destroyBlock(block)
+  }
+
+  // Shared destruction path — also the entry point for bomb/laser chains.
+  private destroyBlock(block: Block) {
+    if (!this.blocks.includes(block)) return   // already destroyed by a chain
+    this.blocks = this.blocks.filter(b => b !== block)
 
     RetroAudio.brickBreak()
     this.addScore(block.maxHp * 10)
     this.spawnDeathParticles(block)
-    this.blocks = this.blocks.filter(b => b !== block)
     gsap.killTweensOf(block.view)   // danger pulse, if any
     block.view.destroy({ children: true })
+
+    if (block.special === 'bomb')       this.explodeBomb(block)
+    else if (block.special === 'laser') this.fireLaser(block)
+  }
+
+  // Bomb: destroys all non-steel blocks in the 8 surrounding cells (bombs chain).
+  private explodeBomb(block: Block) {
+    for (const b of [...this.blocks]) {
+      if (b.special === 'steel') continue
+      if (
+        Math.abs(b.x - block.x) <= BLOCK_W + BLOCK_GAP &&
+        Math.abs(b.y - block.y) <= BLOCK_H + BLOCK_GAP
+      ) {
+        this.destroyBlock(b)
+      }
+    }
+  }
+
+  // Laser: clears the block's entire row and column (non-steel), with a beam flash.
+  private fireLaser(block: Block) {
+    const beam = new Graphics()
+    beam.label = 'laserBeam'
+    beam.rect(this.wallLeft, block.y + BLOCK_H / 2 - 4, GRID_W, 8)
+      .fill({ color: 0xfff2a8, alpha: 0.9 })
+    beam.rect(block.x + BLOCK_W / 2 - 4, 0, 8, this.launcherY)
+      .fill({ color: 0xfff2a8, alpha: 0.9 })
+    this.fxLayer.addChild(beam)
+    gsap.to(beam, {
+      alpha: 0, duration: 0.35, ease: 'power2.out',
+      onComplete: () => { if (!beam.destroyed) beam.destroy() },
+    })
+
+    for (const b of [...this.blocks]) {
+      if (b.special === 'steel') continue
+      const sameRow = Math.abs(b.y - block.y) < BLOCK_H / 2
+      const sameCol = Math.abs(b.x - block.x) < BLOCK_W / 2
+      if (sameRow || sameCol) this.destroyBlock(b)
+    }
   }
 
   // ── pickups ──────────────────────────────────────────────────────────────────
@@ -431,6 +545,13 @@ export class ColourBlazeScene {
     this.fastForward  = false
     this.ffText.alpha = 0
 
+    // Next volley launches from where the first ball landed
+    if (MOVING_LAUNCH && this.nextLauncherX !== null) {
+      this.launcherX = this.nextLauncherX
+      this.positionLauncherHud()
+    }
+    this.nextLauncherX = null
+
     // Tween all landed balls back to the launcher, then advance the turn
     const returning = this.balls
     this.balls = []
@@ -454,8 +575,14 @@ export class ColourBlazeScene {
   private afterVolley() {
     if (this.destroyed || this.gameOver) return
 
-    // Board cleared → next level
-    if (this.blocks.length === 0) {
+    // Board cleared when no destructible blocks remain — leftover steel crumbles
+    if (!this.blocks.some(b => b.special !== 'steel')) {
+      for (const b of this.blocks) {
+        this.spawnDeathParticles(b)
+        gsap.killTweensOf(b.view)
+        b.view.destroy({ children: true })
+      }
+      this.blocks = []
       void this.levelUp()
       return
     }
@@ -484,6 +611,16 @@ export class ColourBlazeScene {
 
   private afterDrop() {
     if (this.destroyed || this.gameOver) return
+
+    // Steel blocks crumble harmlessly at the lose line — they never end the run
+    for (const b of [...this.blocks]) {
+      if (b.special === 'steel' && b.y + BLOCK_H >= this.launcherY - 10) {
+        this.blocks = this.blocks.filter(x => x !== b)
+        this.spawnDeathParticles(b)
+        gsap.killTweensOf(b.view)
+        b.view.destroy({ children: true })
+      }
+    }
 
     // Lose: a block reached the launcher line
     if (this.blocks.some(b => b.y + BLOCK_H >= this.launcherY - 10)) {
@@ -516,7 +653,8 @@ export class ColourBlazeScene {
     const warnY = this.launcherY - 10 - (BLOCK_H + BLOCK_GAP)
 
     for (const block of this.blocks) {
-      const inDanger = block.y + BLOCK_H >= warnY
+      // Steel never triggers the lose condition, so it never warns
+      const inDanger = block.special !== 'steel' && block.y + BLOCK_H >= warnY
       block.setDanger(inDanger)
 
       if (inDanger && !gsap.isTweening(block.view)) {
@@ -542,9 +680,13 @@ export class ColourBlazeScene {
       const x = this.wallLeft + c * (BLOCK_W + BLOCK_GAP)
 
       if (hasBlock[c]) {
-        const hp    = 1 + Math.floor(Math.random() * maxHp)
+        // Occasionally a special block — bomb, laser, or steel (1 HP; steel is immune)
+        const special = Math.random() < SPECIAL_BLOCK_RATE
+          ? SPECIAL_BLOCK_TYPES[Math.floor(Math.random() * SPECIAL_BLOCK_TYPES.length)]
+          : undefined
+        const hp    = special ? 1 : 1 + Math.floor(Math.random() * maxHp)
         const color = BLOCK_COLORS[Math.floor(Math.random() * BLOCK_COLORS.length)]
-        const block = new Block(x, GRID_TOP_PAD, hp, color)
+        const block = new Block(x, GRID_TOP_PAD, hp, color, special)
         this.blocks.push(block)
         this.gameLayer.addChild(block.view)
 
