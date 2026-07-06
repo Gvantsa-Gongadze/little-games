@@ -110,7 +110,7 @@ export default function ColourBlazeCanvas({ onGameOver }: Props) {
 
   return (
     <>
-      <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
+      <div ref={mountRef} style={{ width: '100%', height: '100%', touchAction: 'none' }} />
       {gameOver && (
         <ColourBlazeLeaderboardOverlay
           score={gameOver.score}

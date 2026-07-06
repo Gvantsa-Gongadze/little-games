@@ -415,9 +415,11 @@ LevelConfig   = { level: number; rows: ({ hp: number; color: number } | null)[][
 - Scene game-over callback: `saveProgress(…, 1, score)` (records best score, resets saved level to 1 — a lost run starts over), notifies the page, sets `gameOver` state.
 - Renders `<ColourBlazeLeaderboardOverlay>` when `gameOver` is non-null; `onRestart` re-saves level 1 (covers the race where R is pressed before the game-over save lands) then `window.location.reload()`.
 - `userId` lives in `userIdRef` so both the init closure and the restart handler can reach it.
+- Canvas mount div has `touchAction: 'none'` so the browser never handles gestures on it (no scroll/double-tap-zoom while aiming).
 
 **`ColourBlazeLeaderboardOverlay.tsx`**
 - Props: `score`, `bestScore`, `onRestart`. Orange accent `#ff6600`, dark warm background.
+- Panel width `min(452px, 92vw)` with `border-box` sizing — same outer size on desktop, fits phone viewports.
 - Shows a dimmed `BEST` line under the score (`bestScore = max(loaded game_progress.best_score, this run)` — computed in the canvas's game-over callback and carried in `gameOver` state, not read from a ref during render).
 - Fetches top 10 from `getLeaderboard(GAME_ID, 10)`; highlights current user yellow `#ffdd00` + `" ◄"`.
 - PLAY AGAIN button + R key wired to `onRestart`. Strings from `T.common` / `T.leaderboard` / `T.colourBlaze`.
@@ -443,7 +445,8 @@ Key fields:
 - `fastForward` — a second click while balls are in flight enables ×`FAST_FORWARD` ball speed for the rest of the volley (`»»` indicator above the launcher); reset in `endVolley()`.
 - `inFlight` / `canFire` — `canFire` goes false on fire and only returns true after the descend + top-row spawn completes (or level load), so you can't fire mid-animation.
 - `gameOver` / `destroyed` — guard flags checked by every async continuation (`afterVolley`, `afterDrop`, `levelUp`, launch callbacks).
-- `wallLeft` / `wallRight` — grid edges (from `GRID_W`, centred on screen); balls bounce between these, not screen edges.
+- `viewScale` — mobile fit: `min(1, screenW / (GRID_W + 24))` applied to `view.scale` in `onResize()`. All layout/physics stay in fixed design units; layout uses `screen ÷ scale` dimensions, and input handlers divide `clientX/Y` by `viewScale`. When the grid hugs the left edge, the score/level HUD row drops below the DOM BackButton.
+- `wallLeft` / `wallRight` — grid edges (from `GRID_W`, centred in design space); balls bounce between these, not screen edges.
 - `launcherX` / `launcherY` — launch origin. With `MOVING_LAUNCH`, `endVolley()` moves `launcherX` to `nextLauncherX` (where the FIRST ball of the volley landed, clamped 20 px inside the walls); `onResize`/level load re-centres it. `positionLauncherHud()` keeps the `xN` counter and `»»` indicator attached.
 - `touchAiming` / `lastTouchTime` — touch drag state + guard against the synthetic click browsers fire after a touch.
 
@@ -652,6 +655,7 @@ Auth: Email provider enabled. Username stored in `auth.users.user_metadata.usern
 | Colour Blaze — pickups & pacing | ✓ Row gaps (`ROW_FILL_RATE`), +1 ball pickups in empty lanes, click-to-fast-forward volleys |
 | Colour Blaze — special blocks | ✓ Bomb (8-cell blast, chains), laser (row + column beam), steel (immune, crumbles at the line) |
 | Colour Blaze — touch + moving launch | ✓ Drag-to-aim / release-to-fire touch controls; launcher moves to the first ball's landing spot (`MOVING_LAUNCH`) |
+| Colour Blaze — mobile layout | ✓ Scene scales to viewport (`viewScale` design-space approach), input mapped through the scale, `touch-action: none` canvas, responsive overlay panel |
 
 ---
 

@@ -45,7 +45,7 @@ export function ColourBlazeLeaderboardOverlay({ score, bestScore, onRestart }: P
       fontFamily: FONT,
     }}>
       <div style={{
-        width: 380, padding: '32px 36px',
+        width: 'min(452px, 92vw)', boxSizing: 'border-box', padding: '32px 36px',
         border: `2px solid ${ORANGE}`,
         boxShadow: `0 0 24px ${ORANGE}44, inset 0 0 40px rgba(0,0,0,0.6)`,
         background: '#0f0704',

@@ -76,6 +76,7 @@ export class ColourBlazeScene {
   private lastTouchTime = 0
 
   // Layout
+  private viewScale = 1   // < 1 on screens narrower than the playfield
   private launcherX = 0
   private launcherY = 0
   private wallLeft  = 0
@@ -199,16 +200,27 @@ export class ColourBlazeScene {
   }
 
   onResize() {
-    this.launcherY = H() - LAUNCHER_PAD
+    // Fit the fixed-width playfield to narrow screens: scale the whole scene
+    // down and lay everything out in design units (screen px ÷ scale).
+    this.viewScale = Math.min(1, W() / (GRID_W + 24))
+    this.view.scale.set(this.viewScale)
 
-    const originX  = (W() - GRID_W) / 2
+    const dw = W() / this.viewScale
+    const dh = H() / this.viewScale
+
+    this.launcherY = dh - LAUNCHER_PAD
+
+    const originX  = (dw - GRID_W) / 2
     this.wallLeft  = originX
     this.wallRight = originX + GRID_W
     this.launcherX = originX + GRID_W / 2
 
-    this.scoreText.position.set(this.wallLeft + 2, 26)
-    this.levelText.position.set(this.wallRight - 2, 26)
-    this.splashText.position.set(W() / 2, H() / 2)
+    // When the grid hugs the left edge (mobile), drop the HUD row below the
+    // DOM BackButton (~46 screen px tall) instead of underneath it.
+    const hudY = (this.wallLeft + 2) * this.viewScale < 100 ? 56 / this.viewScale : 26
+    this.scoreText.position.set(this.wallLeft + 2, hudY)
+    this.levelText.position.set(this.wallRight - 2, hudY)
+    this.splashText.position.set(dw / 2, dh / 2)
     this.positionLauncherHud()
 
     this.aimDirty = true
@@ -273,7 +285,7 @@ export class ColourBlazeScene {
   }
 
   private handleMouseMove = (e: MouseEvent) => {
-    this.updateAim(e.clientX, e.clientY)
+    this.updateAim(e.clientX / this.viewScale, e.clientY / this.viewScale)
   }
 
   private handleClick = (e: MouseEvent) => {
@@ -302,7 +314,7 @@ export class ColourBlazeScene {
     const t = e.touches[0]
     if (!t || !this.canFire) return
     this.touchAiming = true
-    this.updateAim(t.clientX, t.clientY)
+    this.updateAim(t.clientX / this.viewScale, t.clientY / this.viewScale)
   }
 
   private handleTouchMove = (e: TouchEvent) => {
@@ -310,7 +322,7 @@ export class ColourBlazeScene {
     e.preventDefault()   // stop the page scrolling while aiming
     this.lastTouchTime = Date.now()
     const t = e.touches[0]
-    if (t) this.updateAim(t.clientX, t.clientY)
+    if (t) this.updateAim(t.clientX / this.viewScale, t.clientY / this.viewScale)
   }
 
   private handleTouchEnd = (e: TouchEvent) => {
