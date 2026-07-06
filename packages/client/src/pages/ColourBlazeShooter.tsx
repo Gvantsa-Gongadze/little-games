@@ -1,4 +1,5 @@
 import ColourBlazeCanvas from '@/games/colour-blaze-shooter/ColourBlazeCanvas'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { BackButton }    from '@/components/BackButton'
 import { supabase }      from '@/lib/supabase'
 import { submitScore }   from '@/lib/scores'
@@ -15,7 +16,9 @@ export default function ColourBlazeShooter() {
 
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh' }}>
-      <ColourBlazeCanvas onGameOver={handleGameOver} />
+      <ErrorBoundary>
+        <ColourBlazeCanvas onGameOver={handleGameOver} />
+      </ErrorBoundary>
       <BackButton />
     </div>
   )

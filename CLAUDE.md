@@ -99,7 +99,7 @@ The font is also preloaded in `index.html` with `<link rel="preload" as="font">`
 
 **`pages/ColourBlazeShooter.tsx`**
 - `handleGameOver(score)` → reads `user_metadata.username`, calls `submitScore(GAME_ID, score, userId, username)` (`GAME_ID = 'colour-blaze-shooter'` from the game's constants).
-- Renders `<ColourBlazeCanvas onGameOver={handleGameOver} />` + `<BackButton />`; the canvas handles the overlay itself.
+- Renders `<ErrorBoundary><ColourBlazeCanvas onGameOver={handleGameOver} /></ErrorBoundary>` + `<BackButton />`; the canvas handles the overlay itself.
 
 **`pages/Game3D.tsx`**
 - Renders `<ErrorBoundary><ThreeCanvas /></ErrorBoundary>`.
@@ -139,7 +139,7 @@ T.touch.*        left, right, thrust, fire, hyperspace
 T.arena2d.*      pressSpace
 T.bubble.*       pressSpace, gameOver, win, score, next, scoreDefault
 T.colourBlaze.*  scoreDefault, levelPrefix, levelSplash, gameOver, score, connectError,
-                 plusOne, fastForward, ballCountPrefix
+                 plusOne, fastForward, ballCountPrefix, best
 ```
 
 **`data/games.ts`** — `GAMES: GameMeta[]`; `tag` type: `'2D' | '3D' | 'ARCADE' | 'CLASSIC'`
@@ -414,7 +414,8 @@ LevelConfig   = { level: number; rows: ({ hp: number; color: number } | null)[][
 - `userId` lives in `userIdRef` so both the init closure and the restart handler can reach it.
 
 **`ColourBlazeLeaderboardOverlay.tsx`**
-- Props: `score`, `onRestart`. Orange accent `#ff6600`, dark warm background.
+- Props: `score`, `bestScore`, `onRestart`. Orange accent `#ff6600`, dark warm background.
+- Shows a dimmed `BEST` line under the score (`bestScore = max(loaded game_progress.best_score, this run)` — computed in the canvas's game-over callback and carried in `gameOver` state, not read from a ref during render).
 - Fetches top 10 from `getLeaderboard(GAME_ID, 10)`; highlights current user yellow `#ffdd00` + `" ◄"`.
 - PLAY AGAIN button + R key wired to `onRestart`. Strings from `T.common` / `T.leaderboard` / `T.colourBlaze`.
 
@@ -443,7 +444,7 @@ Key fields:
 - `launcherX` / `launcherY` — fixed launch origin, bottom centre of the grid.
 
 Key behaviours:
-- **Aim** (`mousemove`): direction from launcher to cursor, clamped to the upward hemisphere ≥ `MIN_AIM_ANGLE` from horizontal; sets `aimDirty = true` only. The dotted guide (55 dots, 16 px spacing, fading, simulates wall bounces, stops at `GRID_TOP_PAD`) is redrawn once per frame in `update()` inside the `aimDirty` gate.
+- **Aim** (`mousemove`): direction from launcher to cursor, clamped to the upward hemisphere ≥ `MIN_AIM_ANGLE` from horizontal; sets `aimDirty = true` only. The dotted guide (55 dots, 16 px spacing, fading, simulates wall bounces, stops at `GRID_TOP_PAD` **or the first block hit** via `guideBlocked()` — same inflated-AABB test as collisions) is redrawn once per frame in `update()` inside the `aimDirty` gate.
 - **Fire** (`click`): guards `canFire && !inFlight`; stagger-launches `ballsInVolley` balls with `gsap.delayedCall(i * 0.08)`; `pendingLaunches` counter prevents premature volley-end while staggered balls are queued; delayed calls stored in `launchCalls` and killed in `destroy()`.
 - **Physics** (`updateBalls`): wall bounce via `Math.abs` (prevents tunnelling), ceiling bounce at y=0, deactivate at `launcherY`. `update()` scales delta by `FAST_FORWARD` when fast-forward is active.
 - **Collision** (`checkCollisions`): AABB inflated by `BALL_RADIUS`, resolves on the smaller-penetration axis, `hitCooldown = 3` frames per ball.
@@ -451,6 +452,7 @@ Key behaviours:
 - **Block destroyed**: score += `maxHp × 10` (GSAP scale-bounce on `scoreText.scale` directly — no PixiPlugin), 10-square radial particle burst in `fxLayer`, `brickBreak()` sound.
 - **Turn cycle**: `endVolley()` tweens balls back to the launcher (0.25 s, 0.03 s stagger) → `afterVolley()` → board empty ? `levelUp()` : `dropBlocks()` (blocks AND pickups descend one row, 0.32 s `power2.inOut`) → `afterDrop()` → lose check (`block.y + BLOCK_H >= launcherY - 10` → GAME OVER splash + `onGameOver(score)`) or: pickups at the launcher line auto-collect, then `spawnTopRow()` → `canFire = true`.
 - **Top row** (`spawnTopRow`): each cell gets a block with `ROW_FILL_RATE` probability (never a fully empty row); empty cells have a `PICKUP_CHANCE` of spawning a `Pickup` instead. Both slide in from above with `back.out(1.2)`.
+- **Danger warning** (`updateDangerState`, called after each descent and on level load): blocks that will cross the lose line on the NEXT descent get `setDanger(true)` (red border + overlay) and a looping alpha pulse; `hitBlock` kills the pulse tween before destroying the view.
 - **Level-up** (`levelUp()`): increments level, awaits `requestLevel(level)` (server round-trip; the canvas wrapper persists the checkpoint), `loadLevel(config)` with `LEVEL n` splash + chime.
 - `destroy()`: removes `mousemove` + `click` listeners, kills `launchCalls` and all tweens on `fxLayer`/`ballLayer`/`gameLayer` children plus `scoreText.scale` and `splashText`, then destroys the container tree.
 
@@ -458,6 +460,7 @@ Key behaviours:
 - `Block(x, y, hp, color)` — `Container` with `Graphics` body (drop shadow → colour fill → specular highlight) + centred HP `Text` label.
 - Fill alpha = `0.42 + 0.58 × (hp/maxHp)` — desaturates as HP drains.
 - `hit()` → decrements HP, redraws, returns `true` when destroyed.
+- `setDanger(on)` → toggles a red warning border + red overlay fill (drawn when one descent from the lose line).
 
 **`entities/Ball.ts`**
 - `Ball(x, y, vx, vy)` — single `Graphics`: outer orange glow, body, hot core, specular highlight.

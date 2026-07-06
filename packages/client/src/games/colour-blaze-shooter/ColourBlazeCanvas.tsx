@@ -15,7 +15,8 @@ export default function ColourBlazeCanvas({ onGameOver }: Props) {
   const mountRef      = useRef<HTMLDivElement>(null)
   const onGameOverRef = useRef(onGameOver)
   const userIdRef     = useRef<string | null>(null)
-  const [gameOver,  setGameOver]  = useState<{ score: number } | null>(null)
+  const bestScoreRef  = useRef(0)
+  const [gameOver,  setGameOver]  = useState<{ score: number; best: number } | null>(null)
   const [initError, setInitError] = useState<string | null>(null)
 
   useEffect(() => { onGameOverRef.current = onGameOver })
@@ -54,6 +55,7 @@ export default function ColourBlazeCanvas({ onGameOver }: Props) {
           userIdRef.current = data.user?.id ?? null
           if (!userIdRef.current) return 1
           const progress = await loadProgress(GAME_ID, userIdRef.current)
+          bestScoreRef.current = progress?.bestScore ?? 0
           return progress ? Math.max(1, progress.level) : 1
         })(),
         app.init({ resizeTo: window, backgroundColor: 0x111111 }),
@@ -73,7 +75,7 @@ export default function ColourBlazeCanvas({ onGameOver }: Props) {
         const userId = userIdRef.current
         if (userId) void saveProgress(GAME_ID, userId, 1, score)
         onGameOverRef.current?.(score)
-        setGameOver({ score })
+        setGameOver({ score, best: Math.max(bestScoreRef.current, score) })
       }, requestLevelAndSave)
       scene = s
       s.loadLevel(firstLevel)
@@ -112,6 +114,7 @@ export default function ColourBlazeCanvas({ onGameOver }: Props) {
       {gameOver && (
         <ColourBlazeLeaderboardOverlay
           score={gameOver.score}
+          bestScore={gameOver.best}
           onRestart={async () => {
             // A lost run starts over: make sure level 1 is saved before the
             // page reloads, even if the game-over save is still in flight.

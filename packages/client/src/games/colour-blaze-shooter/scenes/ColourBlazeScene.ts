@@ -185,6 +185,7 @@ export class ColourBlazeScene {
       })
     })
 
+    this.updateDangerState()
     this.showSplash(`${T.colourBlaze.levelSplash}  ${config.level}`)
   }
 
@@ -378,6 +379,7 @@ export class ColourBlazeScene {
     this.addScore(block.maxHp * 10)
     this.spawnDeathParticles(block)
     this.blocks = this.blocks.filter(b => b !== block)
+    gsap.killTweensOf(block.view)   // danger pulse, if any
     block.view.destroy({ children: true })
   }
 
@@ -502,9 +504,30 @@ export class ColourBlazeScene {
       }
     }
 
+    this.updateDangerState()
     this.spawnTopRow()
     this.canFire  = true
     this.aimDirty = true
+  }
+
+  // Warn on blocks that will cross the lose line on the NEXT descent:
+  // red border + slow alpha pulse.
+  private updateDangerState() {
+    const warnY = this.launcherY - 10 - (BLOCK_H + BLOCK_GAP)
+
+    for (const block of this.blocks) {
+      const inDanger = block.y + BLOCK_H >= warnY
+      block.setDanger(inDanger)
+
+      if (inDanger && !gsap.isTweening(block.view)) {
+        gsap.to(block.view, {
+          alpha: 0.55, duration: 0.35, ease: 'sine.inOut', yoyo: true, repeat: -1,
+        })
+      } else if (!inDanger) {
+        gsap.killTweensOf(block.view)
+        block.view.alpha = 1
+      }
+    }
   }
 
   private spawnTopRow() {
@@ -584,9 +607,21 @@ export class ColourBlazeScene {
         vx = -Math.abs(vx)
       }
       if (y < GRID_TOP_PAD) break
+      if (this.guideBlocked(x, y)) break   // stop at the first block, like a real ball
 
       g.circle(x, y, 3).fill({ color: 0xffffff, alpha: 0.6 * (1 - i / STEPS) })
     }
+  }
+
+  // Same inflated-AABB test as checkCollisions, for the aim guide preview.
+  private guideBlocked(x: number, y: number): boolean {
+    for (const block of this.blocks) {
+      if (
+        x > block.x - BALL_RADIUS && x < block.x + BLOCK_W + BALL_RADIUS &&
+        y > block.y - BALL_RADIUS && y < block.y + BLOCK_H + BALL_RADIUS
+      ) return true
+    }
+    return false
   }
 
   private spawnDeathParticles(block: Block) {

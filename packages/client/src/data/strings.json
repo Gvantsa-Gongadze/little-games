@@ -62,6 +62,7 @@
     "connectError": "Failed to connect:",
     "plusOne": "+1",
     "fastForward": "»»",
-    "ballCountPrefix": "x"
+    "ballCountPrefix": "x",
+    "best": "BEST"
   }
 }

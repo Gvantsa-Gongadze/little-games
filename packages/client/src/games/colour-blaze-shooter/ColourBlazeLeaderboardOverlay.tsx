@@ -8,6 +8,7 @@ type Entry = { score: number; user_id: string; username: string | null; created_
 
 interface Props {
   score:     number
+  bestScore: number
   onRestart: () => void
 }
 
@@ -16,7 +17,7 @@ const DIM    = '#5c3315'
 const YELLOW = '#ffdd00'
 const FONT   = '"Press Start 2P", cursive'
 
-export function ColourBlazeLeaderboardOverlay({ score, onRestart }: Props) {
+export function ColourBlazeLeaderboardOverlay({ score, bestScore, onRestart }: Props) {
   const [entries, setEntries] = useState<Entry[]>([])
   const [userId,  setUserId]  = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -55,8 +56,12 @@ export function ColourBlazeLeaderboardOverlay({ score, onRestart }: Props) {
           {T.common.gameOver}
         </div>
 
-        <div style={{ fontSize: 11, letterSpacing: 3, color: YELLOW, marginBottom: 24 }}>
+        <div style={{ fontSize: 11, letterSpacing: 3, color: YELLOW, marginBottom: 8 }}>
           {T.colourBlaze.score} &nbsp; {String(score).padStart(6, '0')}
+        </div>
+
+        <div style={{ fontSize: 9, letterSpacing: 3, color: ORANGE, opacity: 0.75, marginBottom: 24 }}>
+          {T.colourBlaze.best} &nbsp; {String(bestScore).padStart(6, '0')}
         </div>
 
         <div style={{ borderTop: `1px solid ${DIM}`, marginBottom: 18 }} />

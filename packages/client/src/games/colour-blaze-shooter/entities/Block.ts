@@ -11,8 +11,9 @@ export class Block {
   maxHp: number
   color: number
 
-  private bg:    Graphics
-  private label: Text
+  private bg:     Graphics
+  private label:  Text
+  private danger = false
 
   constructor(x: number, y: number, hp: number, color: number) {
     this.x     = x
@@ -48,6 +49,13 @@ export class Block {
     return this.hp === 0
   }
 
+  // Red warning border when the block is one descent from the lose line.
+  setDanger(on: boolean) {
+    if (this.danger === on) return
+    this.danger = on
+    this.draw()
+  }
+
   private draw() {
     const pct = this.hp / this.maxHp
     const g   = this.bg
@@ -60,6 +68,11 @@ export class Block {
     // Specular highlight
     g.roundRect(3, 3, BLOCK_W - 6, Math.round(BLOCK_H * 0.32), 4)
       .fill({ color: 0xffffff, alpha: 0.18 })
+
+    if (this.danger) {
+      g.roundRect(0, 0, BLOCK_W, BLOCK_H, 6).fill({ color: 0xff0000, alpha: 0.14 })
+      g.roundRect(0, 0, BLOCK_W, BLOCK_H, 6).stroke({ color: 0xff3333, width: 3 })
+    }
 
     this.label.text  = String(this.hp)
     this.label.alpha = this.hp > 0 ? 1 : 0
